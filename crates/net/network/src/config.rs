@@ -143,7 +143,7 @@ impl<C> NetworkConfigBuilder<C> {
         }
     }
 
-    /// set a custom peer config for how peers are handled
+    /// Set a custom peer config for how peers are handled
     pub fn peer_config(mut self, config: PeersConfig) -> Self {
         self.peers_config = Some(config);
         self
