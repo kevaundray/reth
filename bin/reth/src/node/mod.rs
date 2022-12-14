@@ -173,6 +173,6 @@ where
 
     tokio::task::spawn(network);
     //tokio::task::spawn(txpool);
-    tokio::task::spawn(eth);
+    tokio::task::spawn(eth).await.unwrap();
     Ok(handle)
 }
