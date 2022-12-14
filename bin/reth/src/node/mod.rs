@@ -52,50 +52,50 @@ impl Command {
         info!("Connecting to p2p");
         let network = start_network(network_config(db.clone())).await?;
 
-        // TODO: Are most of these Arcs unnecessary? For example, fetch client is completely
-        // cloneable on its own
-        // TODO: Remove magic numbers
-        let fetch_client = Arc::new(network.fetch_client().await?);
-        let mut pipeline = reth_stages::Pipeline::new()
-            .push(
-                HeaderStage {
-                    downloader: headers::linear::LinearDownloadBuilder::default()
-                        .build(consensus.clone(), fetch_client.clone()),
-                    consensus: consensus.clone(),
-                    client: fetch_client.clone(),
-                    commit_threshold: 100,
-                },
-                false,
-            )
-            .push(
-                BodyStage {
-                    downloader: Arc::new(bodies::concurrent::ConcurrentDownloader::new(
-                        fetch_client.clone(),
-                    )),
-                    consensus: consensus.clone(),
-                    batch_size: 100,
-                },
-                false,
-            )
-            .push(SendersStage { batch_size: 1000, commit_threshold: 100 }, false);
+        // // TODO: Are most of these Arcs unnecessary? For example, fetch client is completely
+        // // cloneable on its own
+        // // TODO: Remove magic numbers
+        // let fetch_client = Arc::new(network.fetch_client().await?);
+        // let mut pipeline = reth_stages::Pipeline::new()
+        //     .push(
+        //         HeaderStage {
+        //             downloader: headers::linear::LinearDownloadBuilder::default()
+        //                 .build(consensus.clone(), fetch_client.clone()),
+        //             consensus: consensus.clone(),
+        //             client: fetch_client.clone(),
+        //             commit_threshold: 100,
+        //         },
+        //         false,
+        //     )
+        //     .push(
+        //         BodyStage {
+        //             downloader: Arc::new(bodies::concurrent::ConcurrentDownloader::new(
+        //                 fetch_client.clone(),
+        //             )),
+        //             consensus: consensus.clone(),
+        //             batch_size: 100,
+        //         },
+        //         false,
+        //     )
+        //     .push(SendersStage { batch_size: 1000, commit_threshold: 100 }, false);
 
-        // Run pipeline
-        info!("Starting pipeline");
-        // TODO: This is a temporary measure to set the fork choice state, but this should be
-        // handled by the engine API
-        consensus.notify_fork_choice_state(ForkchoiceState {
-            // NOTE: This is block 1000
-            head_block_hash: H256(hex!(
-                "5b4590a9905fa1c9cc273f32e6dc63b4c512f0ee14edc6fa41c26b416a7b5d58"
-            )),
-            safe_block_hash: H256(hex!(
-                "5b4590a9905fa1c9cc273f32e6dc63b4c512f0ee14edc6fa41c26b416a7b5d58"
-            )),
-            finalized_block_hash: H256(hex!(
-                "5b4590a9905fa1c9cc273f32e6dc63b4c512f0ee14edc6fa41c26b416a7b5d58"
-            )),
-        })?;
-        pipeline.run(db.clone()).await?;
+        // // Run pipeline
+        // info!("Starting pipeline");
+        // // TODO: This is a temporary measure to set the fork choice state, but this should be
+        // // handled by the engine API
+        // consensus.notify_fork_choice_state(ForkchoiceState {
+        //     // NOTE: This is block 1000
+        //     head_block_hash: H256(hex!(
+        //         "5b4590a9905fa1c9cc273f32e6dc63b4c512f0ee14edc6fa41c26b416a7b5d58"
+        //     )),
+        //     safe_block_hash: H256(hex!(
+        //         "5b4590a9905fa1c9cc273f32e6dc63b4c512f0ee14edc6fa41c26b416a7b5d58"
+        //     )),
+        //     finalized_block_hash: H256(hex!(
+        //         "5b4590a9905fa1c9cc273f32e6dc63b4c512f0ee14edc6fa41c26b416a7b5d58"
+        //     )),
+        // })?;
+        // pipeline.run(db.clone()).await?;
 
         info!("Finishing up");
         Ok(())
@@ -120,7 +120,7 @@ fn init_genesis<DB: Database>(db: Arc<DB>) -> Result<(), reth_db::Error> {
     let has_block = tx.cursor::<tables::CanonicalHeaders>()?.first()?.is_some();
     if has_block {
         debug!("Genesis already written, skipping.");
-        return Ok(())
+        return Ok(());
     }
 
     debug!("Writing genesis block.");
