@@ -32,6 +32,7 @@ jobs:
             refactor
             docs
             ci
+          subjectPattern: ^(?![A-Z]).+$
           subjectPatternError: |
             Your PR title doesn't follow the Conventional Commit guidelines.
 
