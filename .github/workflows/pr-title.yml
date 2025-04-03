@@ -15,7 +15,7 @@ permissions:
 jobs:
   conventional-title:
     name: Validate PR title is Conventional Commit
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Check title
         if: github.event_name == 'pull_request'
@@ -32,3 +32,28 @@ jobs:
             refactor
             docs
             ci
+          subjectPatternError: |
+            Your PR title doesn't follow the Conventional Commit guidelines.
+
+            **Example of valid titles:**
+            - `feat: add new user login`
+            - `fix: correct button size`
+            - `docs: update README`
+
+            **Usage:**
+            - `feat`: Introduces a new feature
+            - `fix`:  Patches a bug 
+            - `chore`: General maintenance tasks or updates that do not modify the source code or tests directly (e.g. updating dependencies) 
+            - `test`: Adding new tests or modifying existing tests without changing core application logic
+            - `perf`: Performance improvements
+            - `refactor`: Changes made to improve the structure or readability of the code without changing its functionality
+            - `ci`: Changes related to Continuous Integration or Continuous Development setups and configurations (e.g. Github Actions)
+
+            **Breaking Changes**
+
+            Breaking changes are noted by using an exclamation mark. For example:
+              - `feat!`: changed the API`
+              - `chore(node)!`: Removed unused public function
+
+            For more information -- follow the guidelines here:
+            https://www.conventionalcommits.org/en/v1.0.0/
