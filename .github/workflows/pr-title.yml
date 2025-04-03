@@ -7,9 +7,11 @@ on:
       - reopened
       - edited
       - synchronize
+
 permissions:
   pull-requests: read
   contents: read
+
 jobs:
   conventional-title:
     name: Validate PR title is Conventional Commit
