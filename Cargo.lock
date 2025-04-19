@@ -258,8 +258,7 @@ dependencies = [
 [[package]]
 name = "alloy-evm"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caabd28657614cecc14d77fde0a630c5c177bfe432ce4ad99db0ad41d9219856"
+source = "git+https://github.com/kevaundray/evm?branch=kw%2Ftoni-metrics#74bf1e50f2bc6445340dd3330795a90da3a24e01"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -272,6 +271,7 @@ dependencies = [
  "op-revm",
  "revm",
  "thiserror 2.0.12",
+ "tracing",
 ]
 
 [[package]]
