@@ -24,7 +24,7 @@ use revm::{
     context::result::ExecutionResult,
     database::{states::bundle_state::BundleRetention, BundleState, State},
 };
-use std::time::Instant;
+use tracing::*;
 
 /// A type that knows how to execute a block. It is assumed to operate on a
 /// [`crate::Evm`] internally and use [`State`] as database.
@@ -482,13 +482,12 @@ where
         strategy.apply_pre_execution_changes()?;
         for tx in block.transactions_recovered() {
             let tx_hash = tx.tx_hash().clone();
-            println!("TX start: {}", tx_hash);
 
             let now = std::time::Instant::now();
             strategy.execute_transaction(tx)?;
             let elapsed = now.elapsed();
 
-            println!("TX end: {} {} microsecond", tx_hash, elapsed.as_micros());
+            info!(target: "reth::acl", tx_hash = %tx_hash, time = ?elapsed, "Finished processing tx");
         }
         let result = strategy.apply_post_execution_changes()?;
 

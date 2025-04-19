@@ -6,6 +6,7 @@ use reth_storage_api::{AccountReader, BlockHashReader, StateProvider};
 use reth_storage_errors::provider::{ProviderError, ProviderResult};
 use revm::{bytecode::Bytecode, state::AccountInfo, Database, DatabaseRef};
 use std::time::Instant;
+use tracing::*;
 
 /// A helper trait responsible for providing state necessary for EVM execution.
 ///
@@ -107,8 +108,8 @@ impl<DB: EvmStateProvider> Database for StateProviderDatabase<DB> {
     fn basic(&mut self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
         let start = Instant::now();
         let result = self.basic_ref(address);
-        let elapsed = start.elapsed().as_micros();
-        println!("Account: {} Time: {} microsecond", address, elapsed);
+        let elapsed = start.elapsed();
+        info!(target: "reth::acl", address = %address, time = ?elapsed, "Account accessed");
         result
     }
 
@@ -118,8 +119,8 @@ impl<DB: EvmStateProvider> Database for StateProviderDatabase<DB> {
     fn code_by_hash(&mut self, code_hash: B256) -> Result<Bytecode, Self::Error> {
         let start = Instant::now();
         let result = self.code_by_hash_ref(code_hash);
-        let elapsed = start.elapsed().as_micros();
-        println!("code_hash :{} Time : {} microsecond", code_hash, elapsed);
+        let elapsed = start.elapsed();
+        info!(target: "reth::acl", code_hash = %code_hash, time = ?elapsed, "code hash accessed");
         result
     }
 
@@ -129,8 +130,8 @@ impl<DB: EvmStateProvider> Database for StateProviderDatabase<DB> {
     fn storage(&mut self, address: Address, index: U256) -> Result<U256, Self::Error> {
         let start = Instant::now();
         let result = self.storage_ref(address, index);
-        let elapsed = start.elapsed().as_micros();
-        println!("Address :{} slot : {} Time: {} microsecond", address, index, elapsed);
+        let elapsed = start.elapsed();
+        info!(target: "reth::acl", address = %address, slot = %index ,time = ?elapsed, "storage accessed");
         result
     }
 
@@ -141,8 +142,8 @@ impl<DB: EvmStateProvider> Database for StateProviderDatabase<DB> {
     fn block_hash(&mut self, number: u64) -> Result<B256, Self::Error> {
         let start = Instant::now();
         let result = self.block_hash_ref(number);
-        let elapsed = start.elapsed().as_micros();
-        println!("Blockhash Number :{} Time : {} microsecond", number, elapsed);
+        let elapsed = start.elapsed();
+        info!(target: "reth::acl", number = %number, time = ?elapsed, "blockhash accessed");
         result
     }
 }

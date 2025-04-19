@@ -19,6 +19,7 @@ reth-primitives-traits.workspace = true
 reth-storage-api.workspace = true
 reth-storage-errors.workspace = true
 reth-trie-common.workspace = true
+tracing.workspace = true
 
 reth-ethereum-primitives = { workspace = true, optional = true }
 
