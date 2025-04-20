@@ -258,7 +258,7 @@ dependencies = [
 [[package]]
 name = "alloy-evm"
 version = "0.5.0"
-source = "git+https://github.com/kevaundray/evm?branch=kw%2Ftoni-metrics#74bf1e50f2bc6445340dd3330795a90da3a24e01"
+source = "git+https://github.com/kevaundray/evm?rev=933a7702730a9de15e99b0c5abb24adf8607afe4#933a7702730a9de15e99b0c5abb24adf8607afe4"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",

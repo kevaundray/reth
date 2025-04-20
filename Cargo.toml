@@ -714,7 +714,7 @@ walkdir = "2.3.3"
 vergen-git2 = "1.0.5"
 
 [patch.crates-io]
-alloy-evm = { git = "https://github.com/kevaundray/evm", branch = "kw/toni-metrics" }
+alloy-evm = { git = "https://github.com/kevaundray/evm", rev = "933a7702730a9de15e99b0c5abb24adf8607afe4" } # branch: kw/toni-metrics
 # alloy-consensus = { git = "https://github.com/alloy-rs/alloy", rev = "cfb13aa" }
 # alloy-contract = { git = "https://github.com/alloy-rs/alloy", rev = "cfb13aa" }
 # alloy-eips = { git = "https://github.com/alloy-rs/alloy", rev = "cfb13aa" }
