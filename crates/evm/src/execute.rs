@@ -511,7 +511,13 @@ where
 
         strategy.apply_pre_execution_changes()?;
         for tx in block.transactions_recovered() {
+            let tx_hash = tx.tx_hash().clone();
+            let now = std::time::Instant::now();
+
             strategy.execute_transaction(tx)?;
+            let elapsed = now.elapsed();
+
+            info!(target: "reth::acl", tx_hash = %tx_hash, time = ?elapsed, "Finished processing tx");
         }
         let result = strategy.apply_post_execution_changes()?;
 
