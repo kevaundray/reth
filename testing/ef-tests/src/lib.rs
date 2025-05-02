@@ -18,6 +18,8 @@ pub mod assert;
 pub mod cases;
 pub mod models;
 
+pub mod recorder;
+
 pub use case::{Case, Cases};
 pub use result::{CaseResult, Error};
 pub use suite::Suite;

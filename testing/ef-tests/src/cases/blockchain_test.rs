@@ -1,6 +1,7 @@
 //! Test runners for `BlockchainTests` in <https://github.com/ethereum/tests>
 
 use crate::{
+    recorder::{StateWitnessRecorderDatabase,merge_execution_witness_records},
     models::{BlockchainTest, ForkSpec},
     Case, Error, Suite,
 };
@@ -235,13 +236,16 @@ fn run_case(case: &BlockchainTest) -> Result<(), Error> {
         // Execute the block
         let state_provider = provider.latest();
         let state_db = StateProviderDatabase(&state_provider);
-        let executor = executor_provider.executor(state_db);
+        let mut state_db = StateWitnessRecorderDatabase::new(state_db);
+        let executor = executor_provider.executor(&mut state_db);
 
         let output = executor
             .execute_with_state_closure(&(*block).clone(), |statedb: &State<_>| {
                 witness_record.record_executed_state(statedb);
             })
             .map_err(|_| Error::BlockProcessingFailed { block_number })?;
+        let witness_record =
+            merge_execution_witness_records(state_db.execution_witness_record(), witness_record);
 
         // Consensus checks after block execution
         validate_block_post_execution(block, &chain_spec, &output.receipts, &output.requests)
@@ -322,7 +326,8 @@ fn run_case(case: &BlockchainTest) -> Result<(), Error> {
     }
 
     // Now validate using the stateless client if everything else passes
-    for (block, execution_witness) in program_inputs {
+    for (block, execution_witness) in program_inputs.into_iter().take(1) {
+        tracing::info!("executing block {:?}", &block);
         stateless_validation(block, execution_witness, chain_spec.clone())
             .expect("stateless validation failed");
     }

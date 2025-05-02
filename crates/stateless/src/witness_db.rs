@@ -104,7 +104,7 @@ impl Database for WitnessDatabase<'_> {
         if !self.trie.check_valid_storage_witness(hashed_address, hashed_slot) {
             return Err(ProviderError::TrieWitnessError(format!(
                 "incomplete storage witness: prover must supply \
-                exclusion proof for slot {hashed_slot:?} in account {hashed_address:?}"
+                exclusion proof for slot {slot:?} in account {address:?}"
             )));
         }
 
