@@ -55,7 +55,7 @@ pub struct BlockchainTestCase {
 
 impl BlockchainTestCase {
     /// Returns `true` if the fork is not supported.
-    pub const fn excluded_fork(network: ForkSpec) -> bool {
+    const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
             ForkSpec::ByzantiumToConstantinopleAt5 |
