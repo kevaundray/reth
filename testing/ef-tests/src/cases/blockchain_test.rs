@@ -50,7 +50,7 @@ impl Suite for BlockchainTests {
 #[derive(Debug, PartialEq, Eq)]
 pub struct BlockchainTestCase {
     pub tests: BTreeMap<String, BlockchainTest>,
-    pub skip: bool,
+    skip: bool,
 }
 
 impl BlockchainTestCase {
