@@ -61,6 +61,8 @@ pub(crate) mod witness_db;
 /// Enum that specifies the fork
 pub mod fork_spec;
 
+pub use alloy_rpc_types_debug::ExecutionWitness;
+
 use reth_ethereum_primitives::Block;
 use reth_primitives::RecoveredBlock;
 use serde::{Deserialize, Serialize};

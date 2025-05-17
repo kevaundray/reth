@@ -14,10 +14,10 @@ workspace = true
 [dependencies]
 # alloy
 alloy-primitives = {workspace = true, features = ["serde"]}
+alloy-rpc-types-debug.workspace = true
 alloy-rlp.workspace = true
 alloy-trie.workspace = true
 alloy-consensus = {workspace = true, features = ["serde"]}
-alloy-eips = { workspace = true }
 
 # reth
 reth-ethereum-consensus.workspace = true
@@ -32,6 +32,7 @@ reth-chainspec.workspace = true
 reth-consensus.workspace = true
 reth-ethereum-primitives = { workspace = true, features = [
     "serde",
+    "serde-bincode-compat",
 ] }
 reth-primitives-traits = { workspace = true, features = [
     "serde",

@@ -1,4 +1,4 @@
-use crate::{witness_db::WitnessDatabase, ExecutionWitness};
+use crate::witness_db::WitnessDatabase;
 use alloc::{
     collections::BTreeMap,
     string::{String, ToString},
@@ -8,6 +8,7 @@ use alloc::{
 use alloy_consensus::{Block, BlockHeader, Header};
 use alloy_primitives::{keccak256, map::B256Map, B256};
 use alloy_rlp::Decodable;
+use alloy_rpc_types_debug::ExecutionWitness;
 use reth_chainspec::ChainSpec;
 use reth_consensus::{Consensus, HeaderValidator};
 use reth_errors::ConsensusError;

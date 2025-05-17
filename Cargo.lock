@@ -11127,9 +11127,9 @@ name = "reth-stateless"
 version = "1.4.1"
 dependencies = [
  "alloy-consensus 1.0.3",
- "alloy-eips 1.0.3",
  "alloy-primitives",
  "alloy-rlp",
+ "alloy-rpc-types-debug",
  "alloy-trie",
  "itertools 0.14.0",
  "reth-chainspec",
