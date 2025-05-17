@@ -77,90 +77,6 @@ impl BlockchainTestCase {
         name.contains("UncleFromSideChain")
     }
 
-    /// If the test expects an exception, return the the block number
-    /// at which it must occur together with the original message.
-    ///
-    /// Note: There is a +1 here because the genesis block is not included
-    /// in the set of blocks, so the first block is actually block number 1
-    /// and not block number 0.
-    #[inline]
-    fn expected_failure(case: &BlockchainTest) -> Option<(u64, String)> {
-        case.blocks.iter().enumerate().find_map(|(idx, blk)| {
-            blk.expect_exception.as_ref().map(|msg| ((idx + 1) as u64, msg.clone()))
-        })
-    }
-
-    /// Execute a single `BlockchainTest`, validating the outcome against the
-    /// expectations encoded in the JSON file.
-    fn run_single_case(name: &str, case: &BlockchainTest) -> Result<(), Error> {
-        let expectation = Self::expected_failure(case);
-        match run_case(case) {
-            // All blocks executed successfully.
-            Ok(_) => {
-                // Check if the test case specifies that it should have failed
-                if let Some((block, msg)) = expectation {
-                    Err(Error::Assertion(format!(
-                        "Test case: {name}\nExpected failure at block {block} - {msg}, but all blocks succeeded",
-                    )))
-                } else {
-                    Ok(())
-                }
-            }
-
-            // A block processing failure occurred.
-            Err(Error::BlockProcessingFailed { block_number }) => match expectation {
-                // It happened on exactly the block we were told to fail on
-                Some((expected, _)) if block_number == expected => Ok(()),
-
-                // Uncle side‑chain edge case, we accept as long as it failed.
-                // But we don't check the exact block number.
-                _ if Self::is_uncle_sidechain_case(name) => Ok(()),
-
-                // Expected failure, but block number does not match
-                Some((expected, _)) => Err(Error::Assertion(format!(
-                    "Test case: {name}\nExpected failure at block {expected}\nGot failure at block {block_number}",
-                ))),
-
-                // No failure expected at all - bubble up original error.
-                None => Err(Error::BlockProcessingFailed { block_number }),
-            },
-
-            // Non‑processing error – forward as‑is.
-            //
-            // This should only happen if we get an unexpected error from processing the block.
-            // Since it is unexpected, we treat it as a test failure. 
-            //
-            // One reason for this happening is when one forgets to wrap the error from `run_case`
-            // so that it produces a `Error::BlockProcessingFailed`  
-            Err(other) => Err(other),
-        }
-    }
-}
-
-impl BlockchainTestCase {
-    /// Returns `true` if the fork is not supported.
-    const fn excluded_fork(network: ForkSpec) -> bool {
-        matches!(
-            network,
-            ForkSpec::ByzantiumToConstantinopleAt5 |
-                ForkSpec::Constantinople |
-                ForkSpec::ConstantinopleFix |
-                ForkSpec::MergeEOF |
-                ForkSpec::MergeMeterInitCode |
-                ForkSpec::MergePush0
-        )
-    }
-
-    /// Checks if the test case is a particular test called `UncleFromSideChain`
-    ///
-    /// This fixture fails as expected, however it fails at the wrong block number.
-    /// Given we no longer have uncle blocks, this test case was pulled out such
-    /// that we ensure it still fails as expected, however we do not check the block number.
-    #[inline]
-    fn is_uncle_sidechain_case(name: &str) -> bool {
-        name.contains("UncleFromSideChain")
-    }
-
     /// If the test expects an exception, return the block number
     /// at which it must occur together with the original message.
     ///
@@ -180,7 +96,7 @@ impl BlockchainTestCase {
         let expectation = Self::expected_failure(case);
         match run_case(case) {
             // All blocks executed successfully.
-            Ok(()) => {
+            Ok(_) => {
                 // Check if the test case specifies that it should have failed
                 if let Some((block, msg)) = expectation {
                     Err(Error::Assertion(format!(
@@ -404,12 +320,12 @@ pub fn run_case(
     }
 
     // Now validate using the stateless client if everything else passes
-    for (block, execution_witness) in program_inputs {
-        stateless_validation(block, execution_witness, chain_spec.clone())
+    for (block, execution_witness) in &program_inputs {
+        stateless_validation(block.clone(), execution_witness.clone(), chain_spec.clone())
             .expect("stateless validation failed");
     }
 
-    Ok(())
+    Ok(program_inputs)
 }
 
 fn decode_blocks(
