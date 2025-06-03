@@ -20,6 +20,6 @@ impl ExecutionProof for Bytes {
 
 impl ExecutionProof for ExecutionWitness {
     fn is_empty(&self) -> bool {
-        self.state.is_empty() && self.bytecodes.is_empty()
+        self.state.is_empty() && self.codes.is_empty()
     }
 }

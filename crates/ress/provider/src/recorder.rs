@@ -1,26 +1,41 @@
-use alloy_primitives::{keccak256, map::HashMap, Address, B256, U256};
+use alloy_primitives::{keccak256, map::B256Map, Address, Bytes, B256, U256};
 use reth_revm::{
     state::{AccountInfo, Bytecode},
+    witness::ExecutionWitnessRecord,
     Database,
 };
 use reth_trie::{HashedPostState, HashedStorage};
 
-/// The state witness recorder that records all state and bytecode accesses during execution.
+/// The state witness recorder that records all state accesses during execution.
 /// It does so by implementing the [`reth_revm::Database`] and recording accesses of accounts and
 /// slots.
 pub(crate) struct StateWitnessRecorderDatabase<D> {
     database: D,
+    // The following fields are essentially the ExecutionWitnessRecord without the preimages.
+    // We are extending the strategy that ress uses so that we get witnesses for
+    // invalid blocks.
     state: HashedPostState,
-    bytecodes: HashMap<B256, Bytecode>,
+    codes: B256Map<Bytes>,
+    lowest_block_number: Option<u64>,
 }
 
 impl<D> StateWitnessRecorderDatabase<D> {
     pub(crate) fn new(database: D) -> Self {
-        Self { database, state: Default::default(), bytecodes: Default::default() }
+        Self {
+            database,
+            state: Default::default(),
+            codes: Default::default(),
+            lowest_block_number: None,
+        }
     }
 
-    pub(crate) fn into_state_and_bytecodes(self) -> (HashedPostState, HashMap<B256, Bytecode>) {
-        (self.state, self.bytecodes)
+    pub(crate) fn execution_witness_record(self) -> ExecutionWitnessRecord {
+        ExecutionWitnessRecord {
+            hashed_state: self.state,
+            codes: self.codes.values().cloned().collect(),
+            keys: Vec::new(),
+            lowest_block_number: self.lowest_block_number,
+        }
     }
 }
 
@@ -48,12 +63,18 @@ impl<D: Database> Database for StateWitnessRecorderDatabase<D> {
     }
 
     fn block_hash(&mut self, number: u64) -> Result<B256, Self::Error> {
-        self.database.block_hash(number)
+        let block_hash = self.database.block_hash(number)?;
+        if let Some(lowest) = self.lowest_block_number {
+            self.lowest_block_number = Some(lowest.min(number));
+        } else {
+            self.lowest_block_number = Some(number);
+        }
+        Ok(block_hash)
     }
 
     fn code_by_hash(&mut self, code_hash: B256) -> Result<Bytecode, Self::Error> {
-        let value = self.database.code_by_hash(code_hash)?;
-        self.bytecodes.insert(code_hash, value.clone());
-        Ok(value)
+        let bytecode = self.database.code_by_hash(code_hash)?;
+        self.codes.insert(code_hash, bytecode.bytes());
+        Ok(bytecode)
     }
 }

@@ -27,6 +27,7 @@ reth-node-api.workspace = true
 # alloy
 alloy-primitives.workspace = true
 alloy-consensus.workspace = true
+alloy-rlp.workspace = true
 
 # misc
 futures.workspace = true

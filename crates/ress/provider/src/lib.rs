@@ -9,7 +9,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 use alloy_consensus::BlockHeader as _;
-use alloy_primitives::{Bytes, B256};
+use alloy_primitives::{map::HashSet, Bytes, B256};
+use alloy_rlp::Encodable;
 use parking_lot::Mutex;
 use reth_chain_state::{ExecutedBlock, ExecutedBlockWithTrieUpdates, MemoryOverlayStateProvider};
 use reth_errors::{ProviderError, ProviderResult};
@@ -17,9 +18,7 @@ use reth_ethereum_primitives::{Block, BlockBody, EthPrimitives};
 use reth_evm::{execute::Executor, ConfigureEvm};
 use reth_primitives_traits::{Block as _, Header, RecoveredBlock};
 use reth_ress_protocol::{ExecutionWitness, RessProtocolProvider};
-use reth_revm::{
-    database::StateProviderDatabase, db::State, state::Bytecode, witness::ExecutionWitnessRecord,
-};
+use reth_revm::{database::StateProviderDatabase, db::State, witness::ExecutionWitnessRecord};
 use reth_storage_api::{BlockReader, BlockSource, StateProviderFactory};
 use reth_tasks::TaskSpawner;
 use reth_trie::{MultiProofTargets, Nibbles, TrieInput};
@@ -94,10 +93,9 @@ where
         Ok(maybe_block)
     }
 
-    /// Generate execution witness for the target block hash.
     pub fn generate_execution_witness(&self, block_hash: B256) -> ProviderResult<ExecutionWitness> {
         if let Some(witness) = self.witness_cache.lock().get(&block_hash).cloned() {
-            return Ok(witness.as_ref().clone())
+            return Ok(witness.as_ref().clone());
         }
 
         let block =
@@ -107,7 +105,7 @@ where
         if best_block_number.saturating_sub(block.number()) > self.max_witness_window {
             return Err(ProviderError::TrieWitnessError(
                 "witness target block exceeds maximum witness window".to_owned(),
-            ))
+            ));
         }
 
         let mut executed_ancestors = Vec::new();
@@ -168,8 +166,9 @@ where
         for block in executed_ancestors.into_iter().rev() {
             trie_input.append_cached_ref(&block.trie, &block.hashed_state);
         }
-        let (mut hashed_state, bytecodes) = db.into_state_and_bytecodes();
-        hashed_state.extend(record.hashed_state);
+        let execution_witness_record =
+            merge_execution_witness_records(db.execution_witness_record(), record);
+        let hashed_state = execution_witness_record.hashed_state;
 
         // Gather the state witness.
         let state = if hashed_state.is_empty() {
@@ -189,9 +188,33 @@ where
             witness_state_provider.witness(trie_input, hashed_state)?
         };
 
+        // TODO: The code below was partially copied from debug_executionWitness
+        let block_number = block.number();
+        let smallest = match execution_witness_record.lowest_block_number {
+            Some(smallest) => smallest,
+            None => {
+                // Return only the parent header, if there were no calls to the
+                // BLOCKHASH opcode.
+                block_number.saturating_sub(1)
+            }
+        };
+
+        let range = smallest..block_number;
+        let headers: Vec<Bytes> = self
+            .provider
+            .headers_range(range)?
+            .into_iter()
+            .map(|header| {
+                let mut serialized_header = Vec::new();
+                header.encode(&mut serialized_header);
+                serialized_header.into()
+            })
+            .collect();
         let witness = ExecutionWitness {
             state,
-            bytecodes: bytecodes.values().map(Bytecode::bytes).collect(),
+            codes: execution_witness_record.codes,
+            headers,
+            keys: Vec::new(),
         };
 
         // Insert witness into the cache.
@@ -253,4 +276,36 @@ where
             w.state
         })
     }
+}
+
+fn merge_execution_witness_records(
+    lhs: ExecutionWitnessRecord,
+    rhs: ExecutionWitnessRecord,
+) -> ExecutionWitnessRecord {
+    // Merge the two execution witness records
+    //
+    // Merge the hashed post state
+    let mut hashed_state = lhs.hashed_state;
+    hashed_state.extend(rhs.hashed_state);
+    //
+    // Merge bytecode
+    let codes: Vec<_> = {
+        let mut merged: HashSet<_> = lhs.codes.into_iter().collect();
+        merged.extend(rhs.codes);
+        merged.into_iter().collect()
+    };
+    // Merge lowest accessed block number
+    let lowest_block_number = {
+        let a = lhs.lowest_block_number;
+        let b = rhs.lowest_block_number;
+        match (a, b) {
+            (Some(a_val), Some(b_val)) => Some(a_val.min(b_val)),
+            // Since we know that they are either both `None` or one of them is `None`
+            // `or` will return the `Some` value or `None` if they are both `None`
+            _ => a.or(b),
+        }
+    };
+
+    // Note: We do not merge the preimages because this is not useful for us
+    ExecutionWitnessRecord { hashed_state, codes, keys: Vec::new(), lowest_block_number }
 }
