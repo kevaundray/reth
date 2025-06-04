@@ -8,10 +8,10 @@ use alloy_rlp::{Decodable, Encodable, RlpDecodable, RlpEncodable};
 #[derive(RlpEncodable, RlpDecodable, PartialEq, Eq, Clone, Default, Debug)]
 #[cfg_attr(any(test, feature = "arbitrary"), derive(arbitrary::Arbitrary))]
 pub struct ExecutionWitness {
-    /// State trie nodes.
     pub state: Vec<Bytes>,
-    /// Bytecodes.
     pub bytecodes: Vec<Bytes>,
+    pub keys: Vec<Bytes>,
+    pub headers: Vec<Bytes>,
 }
 
 /// Node type variant.
