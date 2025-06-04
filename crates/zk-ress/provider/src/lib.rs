@@ -83,10 +83,21 @@ where
     }
 
     async fn proof(&self, block_hash: B256) -> ProviderResult<Self::Proof> {
-        let _witness = self.ress_provider.execution_witness(block_hash);
+        trace!(target: "reth::zk_ress_provider", %block_hash, prover = ?self.prover, "Generating proof");
 
-        // TODO: we have the witness, now make the request to the prover
-        // match self.prover { .. }
-        unimplemented!()
+        match self.prover {
+            ZkRessProver::ExecutionWitness => {
+                // For execution witness, we just return the encoded witness as the proof
+                let witness = self.ress_provider.execution_witness(block_hash).await?;
+                let encoded = alloy_rlp::encode(&witness);
+                Ok(Bytes::from(encoded))
+            }
+            ZkRessProver::Sp1 => {
+                unimplemented!("SP1 proving not yet implemented")
+            }
+            ZkRessProver::Risc0 => {
+                unimplemented!("Risc0 proving not yet implemented")
+            }
+        }
     }
 }
