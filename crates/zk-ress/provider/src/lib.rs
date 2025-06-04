@@ -90,6 +90,8 @@ where
                 // For execution witness, we just return the encoded witness as the proof
                 let witness = self.ress_provider.execution_witness(block_hash).await?;
                 let encoded = alloy_rlp::encode(&witness);
+
+                trace!(target: "reth::zk_ress_provider", enc_wit = ?encoded);
                 Ok(Bytes::from(encoded))
             }
             ZkRessProver::Sp1 => {
