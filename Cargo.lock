@@ -10529,6 +10529,7 @@ dependencies = [
  "reth-ethereum-primitives",
  "reth-evm",
  "reth-primitives-traits",
+ "reth-ress-protocol",
  "reth-ress-provider",
  "reth-storage-api",
  "reth-zk-ress-protocol",
