@@ -71,7 +71,7 @@ where
     P: BlockReader<Block = Block> + StateProviderFactory + Clone + 'static,
     E: ConfigureEvm<Primitives = EthPrimitives> + 'static,
 {
-    type Proof = ExecutionWitness;
+    type Proof = Bytes;
 
     fn header(&self, block_hash: B256) -> ProviderResult<Option<Header>> {
         trace!(target: "reth::zk_ress_provider", %block_hash, "Serving header");
@@ -90,10 +90,10 @@ where
             ZkRessProver::ExecutionWitness => {
                 // For execution witness, we just return the encoded witness as the proof
                 let witness = self.ress_provider.execution_witness(block_hash).await?;
-                // let encoded = alloy_rlp::encode(&witness);
-                trace!(target: "reth::zk_ress_provider", enc_wit = ?witness);
+                let encoded = alloy_rlp::encode(&witness);
+                trace!(target: "reth::zk_ress_provider", enc_wit = ?encoded);
 
-                Ok(witness)
+                Ok(encoded.into())
             }
             ZkRessProver::Sp1 => {
                 unimplemented!("SP1 proving not yet implemented")
