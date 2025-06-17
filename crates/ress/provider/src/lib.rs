@@ -198,9 +198,33 @@ where
             witness_state_provider.witness(trie_input, hashed_state)?
         };
 
+        let block_number = block.number();
+        let smallest = match record.lowest_block_number {
+            Some(smallest) => smallest,
+            None => {
+                // Return only the parent header, if there were no calls to the
+                // BLOCKHASH opcode.
+                block_number.saturating_sub(1)
+            }
+        };
+
+        use alloy_rlp::Encodable;
+        let range = smallest..block_number;
+        let headers: Vec<Bytes> = self
+            .provider
+            .headers_range(range)?
+            .into_iter()
+            .map(|header| {
+                let mut serialized_header = Vec::new();
+                header.encode(&mut serialized_header);
+                serialized_header.into()
+            })
+            .collect();
+
         let witness = ExecutionStateWitness {
             state,
             bytecodes: bytecodes.values().map(Bytecode::original_bytes).collect(),
+            headers,
         };
 
         // Insert witness into the cache.
