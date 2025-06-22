@@ -20,12 +20,12 @@ services:
     # - Use different checkpoint sync URL: `--checkpoint-sync-url https://sepolia.checkpoint-sync.ethpandaops.io`
     command: >
       lighthouse bn
-      --network mainnet
+      --network hoodi
       --http --http-address 0.0.0.0
       --execution-endpoint http://reth:8551
       --metrics --metrics-address 0.0.0.0
       --execution-jwt /root/jwt/jwt.hex
-      --checkpoint-sync-url https://sync-mainnet.beaconcha.in
+      --checkpoint-sync-url https://checkpoint-sync.hoodi.ethpandaops.io
       --checkpoint-sync-url-timeout=300
 
   metrics-exporter:

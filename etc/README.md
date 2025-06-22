@@ -1,3 +1,8 @@
+## Usage (Temp note)
+
+build reth: `docker build -t reth:local .`
+compose: docker compose -f etc/docker-compose.yml -f etc/lighthouse.yml up -d
+
 ## Miscellaneous
 
 This directory contains miscellaneous files, such as example Grafana dashboards and Prometheus configuration.

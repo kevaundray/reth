@@ -3,7 +3,7 @@ name: 'reth'
 services:
   reth:
     restart: unless-stopped
-    image: ghcr.io/paradigmxyz/reth
+    image: reth:local
     ports:
       - '9001:9001' # metrics
       - '30303:30303' # eth/66 peering
@@ -13,6 +13,7 @@ services:
       - mainnet_data:/root/.local/share/reth/mainnet
       - sepolia_data:/root/.local/share/reth/sepolia
       - holesky_data:/root/.local/share/reth/holesky
+      - hoodi_data:/root/.local/share/reth/hoodi
       - logs:/root/logs
       - ./jwttoken:/root/jwt/:ro
     # https://paradigmxyz.github.io/reth/run/troubleshooting.html#concurrent-database-access-error-using-containersdocker
@@ -21,7 +22,8 @@ services:
     # For Holesky, replace `--chain mainnet` with `--chain holesky`
     command: >
       node
-      --chain mainnet
+      --chain hoodi
+      --ress.enable
       --metrics 0.0.0.0:9001
       --log.file.directory /root/logs
       --authrpc.addr 0.0.0.0
@@ -72,6 +74,8 @@ volumes:
   sepolia_data:
     driver: local
   holesky_data:
+    driver: local
+  hoodi_data:
     driver: local
   logs:
     driver: local
