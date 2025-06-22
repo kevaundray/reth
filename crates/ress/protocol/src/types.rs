@@ -12,6 +12,8 @@ pub struct ExecutionStateWitness {
     pub state: Vec<Bytes>,
     /// Bytecodes.
     pub bytecodes: Vec<Bytes>,
+    /// Headers
+    pub headers: Vec<Bytes>,
 }
 
 /// Node type variant.
