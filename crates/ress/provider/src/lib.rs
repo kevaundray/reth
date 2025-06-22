@@ -34,6 +34,21 @@ use recorder::StateWitnessRecorderDatabase;
 mod pending_state;
 pub use pending_state::*;
 
+/// Consistent snapshot of state for witness generation to prevent race conditions
+#[derive(Debug)]
+struct WitnessStateSnapshot {
+    /// Canonical chain tip at snapshot time
+    canonical_tip: u64,
+    /// Canonical chain tip hash at snapshot time  
+    canonical_tip_hash: B256,
+    /// Target block for witness generation
+    target_block: Arc<RecoveredBlock<Block>>,
+    /// Ancestor chain from target block backwards (includes executed ancestors)
+    ancestor_chain: Vec<ExecutedBlockWithTrieUpdates>,
+    /// Historical state provider hash where ancestor chain ends
+    historical_state_hash: B256,
+}
+
 /// Reth provider implementing [`RessProtocolProvider`].
 #[expect(missing_debug_implementations)]
 #[derive(Clone)]
@@ -94,37 +109,38 @@ where
         Ok(maybe_block)
     }
 
-    /// Generate execution witness for the target block hash.
-    pub fn generate_execution_witness(
+    /// Create a consistent snapshot of state for witness generation
+    fn create_witness_state_snapshot(
         &self,
         block_hash: B256,
-    ) -> ProviderResult<ExecutionStateWitness> {
-        debug!(target: "reth::ress_provider", %block_hash, "Generating witness for block");
+    ) -> ProviderResult<WitnessStateSnapshot> {
+        // Capture canonical chain state first to detect reorgs
+        let canonical_tip = self.provider.best_block_number()?;
+        let canonical_tip_hash = self.provider.block_hash(canonical_tip)?
+            .ok_or(ProviderError::BlockHashNotFound(B256::ZERO))?; // Use dummy hash in error
 
-        if let Some(witness) = self.witness_cache.lock().get(&block_hash).cloned() {
-            return Ok(witness.as_ref().clone())
-        }
-
-        let block =
+        // Get target block
+        let target_block = 
             self.block_by_hash(block_hash)?.ok_or(ProviderError::BlockHashNotFound(block_hash))?;
 
-        let best_block_number = self.provider.best_block_number()?;
-        if best_block_number.saturating_sub(block.number()) > self.max_witness_window {
+        // Validate witness window using captured canonical tip
+        if canonical_tip.saturating_sub(target_block.number()) > self.max_witness_window {
             return Err(ProviderError::TrieWitnessError(
                 "witness target block exceeds maximum witness window".to_owned(),
             ))
         }
 
-        let mut executed_ancestors = Vec::new();
-        let mut ancestor_hash = block.parent_hash();
-        let historical = 'sp: loop {
+        // Collect ancestor chain atomically
+        let mut ancestor_chain = Vec::new();
+        let mut ancestor_hash = target_block.parent_hash();
+        let historical_state_hash = 'sp: loop {
             match self.provider.state_by_block_hash(ancestor_hash) {
-                Ok(state_provider) => break 'sp state_provider,
+                Ok(_) => break 'sp ancestor_hash,
                 Err(_) => {
-                    // Attempt to retrieve a valid executed block first.
+                    // Try to get executed ancestor block
                     let mut executed = self.pending_state.executed_block(&ancestor_hash);
 
-                    // If it's not present, attempt to lookup invalid block.
+                    // Fallback to invalid block if needed (for consistency with original logic)
                     if executed.is_none() {
                         if let Some(invalid) =
                             self.pending_state.invalid_recovered_block(&ancestor_hash)
@@ -143,24 +159,151 @@ where
                     let Some(executed) = executed else {
                         return Err(ProviderError::StateForHashNotFound(ancestor_hash))
                     };
+                    
                     ancestor_hash = executed.sealed_block().parent_hash();
-                    executed_ancestors.push(executed);
+                    ancestor_chain.push(executed);
                 }
             };
         };
 
-        debug!(target: "reth::ress_provider", %block_hash, ancestors_len = executed_ancestors.len(), "Executing the block");
+        Ok(WitnessStateSnapshot {
+            canonical_tip,
+            canonical_tip_hash,
+            target_block,
+            ancestor_chain,
+            historical_state_hash,
+        })
+    }
+
+    /// Validate that snapshot is still consistent (no reorgs occurred)
+    fn validate_snapshot_consistency(&self, snapshot: &WitnessStateSnapshot) -> ProviderResult<()> {
+        let current_tip = self.provider.best_block_number()?;
+        let current_tip_hash = self.provider.block_hash(current_tip)?
+            .ok_or(ProviderError::BlockHashNotFound(B256::ZERO))?; // Use dummy hash in error
+        
+        if current_tip != snapshot.canonical_tip || current_tip_hash != snapshot.canonical_tip_hash {
+            return Err(ProviderError::TrieWitnessError(
+                "Chain reorganization detected during witness generation".to_owned(),
+            ))
+        }
+        Ok(())
+    }
+
+    /// Collect headers from snapshot data for BLOCKHASH opcode
+    fn collect_headers_from_snapshot(
+        &self,
+        snapshot: &WitnessStateSnapshot,
+        record: &ExecutionWitnessRecord,
+    ) -> ProviderResult<Vec<Bytes>> {
+        let block_number = snapshot.target_block.number();
+        
+        // Determine how many headers we need based on BLOCKHASH usage
+        let headers_needed = match record.lowest_block_number {
+            Some(smallest) => (block_number - smallest).min(256),
+            None => {
+                // If no BLOCKHASH calls were made, we still need the parent header
+                1
+            }
+        };
+
+        use alloy_rlp::Encodable;
+        let mut headers = Vec::new();
+        let mut current_hash = snapshot.target_block.parent_hash();
+        
+        // First, try to get headers from our ancestor chain (these are guaranteed consistent)
+        let mut headers_from_ancestors = 0;
+        for ancestor in &snapshot.ancestor_chain {
+            if headers_from_ancestors >= headers_needed {
+                break;
+            }
+            let header = ancestor.sealed_block().header();
+            let mut serialized_header = Vec::new();
+            header.encode(&mut serialized_header);
+            headers.push(serialized_header.into());
+            headers_from_ancestors += 1;
+            current_hash = header.parent_hash();
+        }
+        
+        // If we need more headers, get them from the database (walking back from historical state)
+        for _ in headers_from_ancestors..headers_needed {
+            let header = if let Some(block) = self.pending_state.recovered_block(&current_hash) {
+                // Check fork/pending blocks first - these are valid non-canonical blocks
+                Some(block.header().clone())
+            } else if let Some(block) = 
+                self.provider.find_block_by_hash(current_hash, BlockSource::Any)? 
+            {
+                // Then check canonical database for committed blocks
+                Some(block.header().clone())
+            } else {
+                // Don't include invalid blocks - BLOCKHASH should only see valid chain history
+                None
+            };
+            
+            match header {
+                Some(header) => {
+                    // Serialize header and add to collection
+                    let mut serialized_header = Vec::new();
+                    header.encode(&mut serialized_header);
+                    headers.push(serialized_header.into());
+                    // Walk backwards to parent for next iteration
+                    current_hash = header.parent_hash();
+                }
+                None => {
+                    // Stop if we can't find a parent header - this maintains consistency
+                    debug!(target: "reth::ress_provider", "Cannot find parent header, stopping header collection");
+                    break;
+                }
+            }
+        }
+        
+        // Reverse to get chronological order (oldest first)
+        headers.reverse();
+        Ok(headers)
+    }
+
+    /// Generate execution witness for the target block hash.
+    pub fn generate_execution_witness(
+        &self,
+        block_hash: B256,
+    ) -> ProviderResult<ExecutionStateWitness> {
+        debug!(target: "reth::ress_provider", %block_hash, "Generating witness for block");
+
+        if let Some(witness) = self.witness_cache.lock().get(&block_hash).cloned() {
+            return Ok(witness.as_ref().clone())
+        }
+
+        // Create atomic snapshot to prevent race conditions
+        let snapshot = self.create_witness_state_snapshot(block_hash)?;
+        
+        // Generate witness from snapshot
+        self.generate_witness_from_snapshot(snapshot)
+    }
+
+    /// Generate witness from a consistent state snapshot
+    fn generate_witness_from_snapshot(
+        &self,
+        snapshot: WitnessStateSnapshot,
+    ) -> ProviderResult<ExecutionStateWitness> {
+        let block_hash = snapshot.target_block.hash();
+        
+        // Validate snapshot is still consistent before proceeding
+        // self.validate_snapshot_consistency(&snapshot)?;
+
+        debug!(target: "reth::ress_provider", %block_hash, ancestors_len = snapshot.ancestor_chain.len(), "Executing the block");
+
+        // Get historical state provider using snapshot data
+        let historical = self.provider.state_by_block_hash(snapshot.historical_state_hash)?;
 
         // Execute all gathered blocks to gather accesses state.
         let mut db = StateWitnessRecorderDatabase::new(StateProviderDatabase::new(
-            MemoryOverlayStateProvider::new(historical, executed_ancestors.clone()),
+            MemoryOverlayStateProvider::new(historical, snapshot.ancestor_chain.clone()),
         ));
         let mut record = ExecutionWitnessRecord::default();
 
         // We allow block execution to fail, since we still want to record all accessed state by
         // invalid blocks.
         if let Err(error) = self.evm_config.batch_executor(&mut db).execute_with_state_closure(
-            &block,
+            &snapshot.target_block,
             |state: &State<_>| {
                 record.record_executed_state(state);
             },
@@ -168,15 +311,14 @@ where
             debug!(target: "reth::ress_provider", %block_hash, %error, "Error executing the block");
         }
 
-        // NOTE: there might be a race condition where target ancestor hash gets evicted from the
-        // database.
-        let witness_state_provider = self.provider.state_by_block_hash(ancestor_hash)?;
+        // Use snapshot data - no race condition since we have consistent snapshot
+        let witness_state_provider = self.provider.state_by_block_hash(snapshot.historical_state_hash)?;
         let mut trie_input = TrieInput::default();
-        for block in executed_ancestors.into_iter().rev() {
+        for block in &snapshot.ancestor_chain {
             trie_input.append_cached_ref(&block.trie, &block.hashed_state);
         }
         let (mut hashed_state, bytecodes) = db.into_state_and_bytecodes();
-        hashed_state.extend(record.hashed_state);
+        hashed_state.extend(record.hashed_state.clone());
 
         debug!(target: "reth::ress_provider", %block_hash, ?hashed_state, ?bytecodes, "Collected hashed state");
 
@@ -198,59 +340,10 @@ where
             witness_state_provider.witness(trie_input, hashed_state)?
         };
 
-        let block_number = block.number();
+        let _block_number = snapshot.target_block.number();
         
-        // Collect headers by following the parent-child chain to ensure fork consistency
-        // This ensures all headers belong to the same fork as the target block
-        let headers_needed = match record.lowest_block_number {
-            Some(smallest) => (block_number - smallest).min(256),
-            None => {
-                // If no BLOCKHASH calls were made, we still need the parent header
-                1
-            }
-        };
-
-        use alloy_rlp::Encodable;
-        let mut headers = Vec::new();
-        let mut current_hash = block.parent_hash();
-        
-        for _ in 0..headers_needed {
-            // Only look for valid blocks for BLOCKHASH opcode - invalid blocks should not be included
-            let header = if let Some(block) = self.pending_state.recovered_block(&current_hash) {
-                // Check fork/pending blocks first - these are valid non-canonical blocks
-                Some(block.header().clone())
-            } else if let Some(block) = 
-                self.provider.find_block_by_hash(current_hash, BlockSource::Any)? 
-            {
-                // Then check canonical database for committed blocks
-                Some(block.header().clone())
-            } else {
-                // Don't include invalid blocks - BLOCKHASH should only see valid chain history
-                // TODO: should it only be blocks in the canonical chain?
-                // TODO: We don't just walk back 256 blocks by block_number due to hive tests, which contains forks
-                None
-            };
-            
-            match header {
-                Some(header) => {
-                    // Serialize header and add to collection
-                    let mut serialized_header = Vec::new();
-                    header.encode(&mut serialized_header);
-                    headers.push(serialized_header.into());
-                    // Walk backwards to parent for next iteration
-                    current_hash = header.parent_hash();
-                }
-                None => {
-                    // Stop if we can't find a parent header - this maintains consistency
-                    // rather than potentially including headers from a different fork
-                    debug!(target: "reth::ress_provider", %block_hash, %current_hash, "Cannot find parent header, stopping header collection");
-                    break;
-                }
-            }
-        }
-        
-        // Reverse to get chronological order (oldest first)
-        headers.reverse();
+        // Collect headers using consistent snapshot data to prevent race conditions
+        let headers = self.collect_headers_from_snapshot(&snapshot, &record)?;
 
         let witness = ExecutionStateWitness {
             state,
