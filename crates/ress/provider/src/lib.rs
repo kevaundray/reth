@@ -199,14 +199,16 @@ where
         };
 
         let block_number = block.number();
-        let smallest = match record.lowest_block_number {
-            Some(smallest) => smallest,
-            None => {
-                // Return only the parent header, if there were no calls to the
-                // BLOCKHASH opcode.
-                block_number.saturating_sub(1)
-            }
-        };
+        // TODO: we just get the last 256 headers for now
+        let smallest = block_number.saturating_sub(256); 
+        // let smallest = match record.lowest_block_number {
+        //     Some(smallest) => smallest,
+        //     None => {
+        //         // Return only the parent header, if there were no calls to the
+        //         // BLOCKHASH opcode.
+        //         block_number.saturating_sub(1)
+        //     }
+        // };
 
         use alloy_rlp::Encodable;
         let range = smallest..block_number;
