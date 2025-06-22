@@ -60,6 +60,7 @@ arbitrary = [
     "dep:arbitrary",
     "reth-eth-wire/arbitrary",
     "alloy-primitives/arbitrary",
+    "reth-ress-protocol/arbitrary",
     "reth-zk-ress-protocol/arbitrary",
     "reth-ethereum-primitives/arbitrary",
     "alloy-consensus/arbitrary",

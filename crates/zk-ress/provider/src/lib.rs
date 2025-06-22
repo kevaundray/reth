@@ -49,6 +49,15 @@ impl ZkRessProver {
             Self::Risc0 => "zk-ress-risc0",
         }
     }
+
+    /// Returns the byte encoding for this prover type.
+    pub fn as_byte(&self) -> u8 {
+        match self {
+            Self::ExecutionWitness => 0,
+            Self::Sp1 => 1,
+            Self::Risc0 => 2,
+        }
+    }
 }
 
 /// Reth provider implementing [`ZkRessProtocolProvider`].
@@ -87,6 +96,8 @@ where
         match self.prover {
             ZkRessProver::ExecutionWitness => {
                 let mut encoded = BytesMut::new();
+                encoded.extend_from_slice(&[self.prover.as_byte()]);
+
                 witness.encode(&mut encoded);
                 Ok(encoded.freeze().into())
             }
