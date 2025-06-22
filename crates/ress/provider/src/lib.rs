@@ -199,29 +199,58 @@ where
         };
 
         let block_number = block.number();
-        // TODO: we just get the last 256 headers for now
-        let smallest = block_number.saturating_sub(256); 
-        // let smallest = match record.lowest_block_number {
-        //     Some(smallest) => smallest,
-        //     None => {
-        //         // Return only the parent header, if there were no calls to the
-        //         // BLOCKHASH opcode.
-        //         block_number.saturating_sub(1)
-        //     }
-        // };
+        
+        // Collect headers by following the parent-child chain to ensure fork consistency
+        // This ensures all headers belong to the same fork as the target block
+        let headers_needed = match record.lowest_block_number {
+            Some(smallest) => (block_number - smallest).min(256),
+            None => {
+                // If no BLOCKHASH calls were made, we still need the parent header
+                1
+            }
+        };
 
         use alloy_rlp::Encodable;
-        let range = smallest..block_number;
-        let headers: Vec<Bytes> = self
-            .provider
-            .headers_range(range)?
-            .into_iter()
-            .map(|header| {
-                let mut serialized_header = Vec::new();
-                header.encode(&mut serialized_header);
-                serialized_header.into()
-            })
-            .collect();
+        let mut headers = Vec::new();
+        let mut current_hash = block.parent_hash();
+        
+        for _ in 0..headers_needed {
+            // Only look for valid blocks for BLOCKHASH opcode - invalid blocks should not be included
+            let header = if let Some(block) = self.pending_state.recovered_block(&current_hash) {
+                // Check fork/pending blocks first - these are valid non-canonical blocks
+                Some(block.header().clone())
+            } else if let Some(block) = 
+                self.provider.find_block_by_hash(current_hash, BlockSource::Any)? 
+            {
+                // Then check canonical database for committed blocks
+                Some(block.header().clone())
+            } else {
+                // Don't include invalid blocks - BLOCKHASH should only see valid chain history
+                // TODO: should it only be blocks in the canonical chain?
+                // TODO: We don't just walk back 256 blocks by block_number due to hive tests, which contains forks
+                None
+            };
+            
+            match header {
+                Some(header) => {
+                    // Serialize header and add to collection
+                    let mut serialized_header = Vec::new();
+                    header.encode(&mut serialized_header);
+                    headers.push(serialized_header.into());
+                    // Walk backwards to parent for next iteration
+                    current_hash = header.parent_hash();
+                }
+                None => {
+                    // Stop if we can't find a parent header - this maintains consistency
+                    // rather than potentially including headers from a different fork
+                    debug!(target: "reth::ress_provider", %block_hash, %current_hash, "Cannot find parent header, stopping header collection");
+                    break;
+                }
+            }
+        }
+        
+        // Reverse to get chronological order (oldest first)
+        headers.reverse();
 
         let witness = ExecutionStateWitness {
             state,
