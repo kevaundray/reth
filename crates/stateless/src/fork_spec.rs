@@ -57,6 +57,8 @@ pub enum ForkSpec {
     Cancun,
     /// Prague
     Prague,
+    /// Osaka
+    Osaka,
 }
 
 impl From<ForkSpec> for ChainSpec {
@@ -89,6 +91,7 @@ impl From<ForkSpec> for ChainSpec {
                 panic!("Overridden with PETERSBURG")
             }
             ForkSpec::Prague => spec_builder.prague_activated(),
+            ForkSpec::Osaka => spec_builder.prague_activated(),
         }
         .build()
     }
