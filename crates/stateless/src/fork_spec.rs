@@ -91,7 +91,7 @@ impl From<ForkSpec> for ChainSpec {
                 panic!("Overridden with PETERSBURG")
             }
             ForkSpec::Prague => spec_builder.prague_activated(),
-            ForkSpec::Osaka => spec_builder.prague_activated(),
+            ForkSpec::Osaka => spec_builder.osaka_activated(),
         }
         .build()
     }
