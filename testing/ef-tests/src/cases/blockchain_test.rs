@@ -49,7 +49,7 @@ impl Suite for BlockchainTests {
 /// An Ethereum blockchain test.
 #[derive(Debug, PartialEq, Eq)]
 pub struct BlockchainTestCase {
-    tests: BTreeMap<String, BlockchainTest>,
+    pub tests: BTreeMap<String, BlockchainTest>,
     skip: bool,
 }
 
@@ -183,7 +183,7 @@ impl Case for BlockchainTestCase {
 /// Returns:
 /// - `Ok(())` if all blocks execute successfully and the final state is correct.
 /// - `Err(Error)` if any block fails to execute correctly, or if the post-state validation fails.
-fn run_case(
+pub fn run_case(
     case: &BlockchainTest,
 ) -> Result<Vec<(RecoveredBlock<Block>, ExecutionWitness)>, Error> {
     // Create a new test database and initialize a provider for the test case.
