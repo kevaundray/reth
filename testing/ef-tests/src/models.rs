@@ -310,6 +310,8 @@ pub enum ForkSpec {
     Cancun,
     /// Prague
     Prague,
+    /// Osaka
+    Osaka,
 }
 
 impl From<ForkSpec> for ChainSpec {
@@ -342,6 +344,7 @@ impl From<ForkSpec> for ChainSpec {
                 panic!("Overridden with PETERSBURG")
             }
             ForkSpec::Prague => spec_builder.prague_activated(),
+            ForkSpec::Osaka => spec_builder.osaka_activated(),
         }
         .build()
     }
@@ -384,6 +387,7 @@ impl From<ForkSpec> for reth_stateless::fork_spec::ForkSpec {
             ForkSpec::MergePush0 => reth_stateless::fork_spec::ForkSpec::MergePush0,
             ForkSpec::Cancun => reth_stateless::fork_spec::ForkSpec::Cancun,
             ForkSpec::Prague => reth_stateless::fork_spec::ForkSpec::Prague,
+            ForkSpec::Osaka => reth_stateless::fork_spec::ForkSpec::Osaka,
         }
     }
 }
