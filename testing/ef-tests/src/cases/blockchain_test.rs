@@ -4,14 +4,16 @@ use crate::{
     models::{BlockchainTest, ForkSpec},
     Case, Error, Suite,
 };
+use alloy_consensus::Transaction;
 use alloy_rlp::{Decodable, Encodable};
+use alloy_rpc_types_trace::geth::GethTrace;
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use reth_chainspec::ChainSpec;
 use reth_consensus::{Consensus, HeaderValidator};
 use reth_db_common::init::{insert_genesis_hashes, insert_genesis_history, insert_genesis_state};
 use reth_ethereum_consensus::{validate_block_post_execution, EthBeaconConsensus};
 use reth_ethereum_primitives::Block;
-use reth_evm::{execute::Executor, ConfigureEvm};
+use reth_evm::{block::SystemCaller, execute::Executor, ConfigureEvm, Evm};
 use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives_traits::{RecoveredBlock, SealedBlock};
 use reth_provider::{
@@ -19,11 +21,14 @@ use reth_provider::{
     ExecutionOutcome, HeaderProvider, HistoryWriter, OriginalValuesKnown, StateProofProvider,
     StateWriter, StorageLocation,
 };
-use reth_revm::{database::StateProviderDatabase, witness::ExecutionWitnessRecord, State};
+use reth_revm::{
+    database::StateProviderDatabase, db::CacheDB, witness::ExecutionWitnessRecord, State,
+};
 use reth_stateless::{validation::stateless_validation, ExecutionWitness};
 use reth_trie::{HashedPostState, KeccakKeyHasher, StateRoot};
 use reth_trie_db::DatabaseStateRoot;
-use std::{collections::BTreeMap, fs, path::Path, sync::Arc};
+use revm_inspectors::tracing::{TracingInspector, TracingInspectorConfig};
+use std::{collections::BTreeMap, fs, ops::Deref, path::Path, sync::Arc};
 
 /// A handler for the blockchain test suite.
 #[derive(Debug)]
@@ -58,12 +63,12 @@ impl BlockchainTestCase {
     const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
-            ForkSpec::ByzantiumToConstantinopleAt5 |
-                ForkSpec::Constantinople |
-                ForkSpec::ConstantinopleFix |
-                ForkSpec::MergeEOF |
-                ForkSpec::MergeMeterInitCode |
-                ForkSpec::MergePush0
+            ForkSpec::ByzantiumToConstantinopleAt5
+                | ForkSpec::Constantinople
+                | ForkSpec::ConstantinopleFix
+                | ForkSpec::MergeEOF
+                | ForkSpec::MergeMeterInitCode
+                | ForkSpec::MergePush0
         )
     }
 
@@ -157,7 +162,7 @@ impl Case for BlockchainTestCase {
     fn run(&self) -> Result<(), Error> {
         // If the test is marked for skipping, return a Skipped error immediately.
         if self.skip {
-            return Err(Error::Skipped)
+            return Err(Error::Skipped);
         }
 
         // Iterate through test cases, filtering by the network type to exclude specific forks.
@@ -285,7 +290,7 @@ pub fn run_case(
             return Err(Error::block_failed(
                 block_number,
                 Error::Assertion("state root mismatch".to_string()),
-            ))
+            ));
         }
 
         // Commit the post state/state diff to the database
@@ -340,6 +345,83 @@ pub fn run_case(
     }
 
     Ok(program_inputs)
+}
+
+pub fn trace_case(case: &BlockchainTest) -> Result<Vec<GethTrace>, Error> {
+    // Create a new test database and initialize a provider for the test case.
+    let chain_spec: Arc<ChainSpec> = Arc::new(case.network.into());
+    let factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
+    let provider = factory.database_provider_rw().unwrap();
+
+    // Insert initial test state into the provider.
+    let genesis_block = SealedBlock::<Block>::from_sealed_parts(
+        case.genesis_block_header.clone().into(),
+        Default::default(),
+    )
+    .try_recover()
+    .unwrap();
+
+    provider
+        .insert_block(genesis_block.clone(), StorageLocation::Database)
+        .map_err(|err| Error::block_failed(0, err))?;
+
+    let genesis_state = case.pre.clone().into_genesis_state();
+    insert_genesis_state(&provider, genesis_state.iter())
+        .map_err(|err| Error::block_failed(0, err))?;
+    insert_genesis_hashes(&provider, genesis_state.iter())
+        .map_err(|err| Error::block_failed(0, err))?;
+    insert_genesis_history(&provider, genesis_state.iter())
+        .map_err(|err| Error::block_failed(0, err))?;
+
+    // Decode blocks
+    let blocks = decode_blocks(&case.blocks)?;
+
+    let executor_provider = EthEvmConfig::ethereum(chain_spec.clone());
+
+    let mut tx_traces: Vec<GethTrace> = Vec::new();
+    for (block_index, block) in blocks.iter().enumerate() {
+        // Note: same as the comment on `decode_blocks` as to why we cannot use block.number
+        let block_number = (block_index + 1) as u64;
+
+        // Insert the block into the database
+        provider
+            .insert_block(block.clone(), StorageLocation::Database)
+            .map_err(|err| Error::block_failed(block_number, err))?;
+
+        // Execute the block
+        let state_provider = provider.latest();
+
+        let mut system_caller = SystemCaller::new(provider.chain_spec());
+
+        let mut db = CacheDB::new(StateProviderDatabase::new(state_provider));
+
+        let evm_env = executor_provider.evm_env(block.header());
+        let mut evm = executor_provider.evm_with_env(&mut db, evm_env.clone());
+        system_caller.apply_pre_execution_changes(block.header(), &mut evm).unwrap();
+
+        for tx in block.transactions_recovered() {
+            let config = TracingInspectorConfig::default_geth();
+            let mut inspector = TracingInspector::new(config);
+            let evm_env = executor_provider.evm_env(block.header());
+            let mut evm =
+                executor_provider.evm_with_env_and_inspector(&mut db, evm_env, &mut inspector);
+            let res = evm.transact(&tx).unwrap();
+            let gas_used = res.result.gas_used();
+            let return_value = res.result.into_output().unwrap_or_default();
+            inspector.set_transaction_gas_limit(tx.gas_limit());
+            let get_trace: GethTrace = inspector
+                .geth_builder()
+                .geth_traces(
+                    gas_used,
+                    return_value,
+                    alloy_rpc_types_trace::geth::GethDefaultTracingOptions::default(),
+                )
+                .into();
+            tx_traces.push(get_trace);
+        }
+    }
+
+    Ok(tx_traces)
 }
 
 fn decode_blocks(
