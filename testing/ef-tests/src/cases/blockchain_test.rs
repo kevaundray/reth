@@ -347,7 +347,7 @@ pub fn run_case(
     Ok(program_inputs)
 }
 
-pub fn trace_case(case: &BlockchainTest) -> Result<Vec<GethTrace>, Error> {
+pub fn trace_case(case: &BlockchainTest) -> Result<Vec<Vec<GethTrace>>, Error> {
     // Create a new test database and initialize a provider for the test case.
     let chain_spec: Arc<ChainSpec> = Arc::new(case.network.into());
     let factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
@@ -378,7 +378,7 @@ pub fn trace_case(case: &BlockchainTest) -> Result<Vec<GethTrace>, Error> {
 
     let executor_provider = EthEvmConfig::ethereum(chain_spec.clone());
 
-    let mut tx_traces: Vec<GethTrace> = Vec::new();
+    let mut blocks_traces: Vec<Vec<GethTrace>> = Vec::new();
     for (block_index, block) in blocks.iter().enumerate() {
         // Note: same as the comment on `decode_blocks` as to why we cannot use block.number
         let block_number = (block_index + 1) as u64;
@@ -399,6 +399,7 @@ pub fn trace_case(case: &BlockchainTest) -> Result<Vec<GethTrace>, Error> {
         let mut evm = executor_provider.evm_with_env(&mut db, evm_env.clone());
         system_caller.apply_pre_execution_changes(block.header(), &mut evm).unwrap();
 
+        let mut tx_traces: Vec<GethTrace> = Vec::new();
         for tx in block.transactions_recovered() {
             let config = TracingInspectorConfig::default_geth();
             let mut inspector = TracingInspector::new(config);
@@ -419,9 +420,10 @@ pub fn trace_case(case: &BlockchainTest) -> Result<Vec<GethTrace>, Error> {
                 .into();
             tx_traces.push(get_trace);
         }
+        blocks_traces.push(tx_traces);
     }
 
-    Ok(tx_traces)
+    Ok(blocks_traces)
 }
 
 fn decode_blocks(
