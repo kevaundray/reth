@@ -73,6 +73,8 @@ where
 
     /// Get basic account information by hashing the address and looking up the account RLP
     /// in the underlying [`StatelessTrie`] implementation.
+    /// *IMPORTANT*: This does not return the code, only the basic account information. For code use
+    /// [`Self::code_by_hash`] instead.
     ///
     /// Returns `Ok(None)` if the account is not found in the trie.
     fn basic(&mut self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {

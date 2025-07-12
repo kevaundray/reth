@@ -63,6 +63,9 @@ pub mod fork_spec;
 #[doc(inline)]
 pub use alloy_rpc_types_debug::ExecutionWitness;
 
+/// Stateless trace module
+pub mod trace;
+
 use reth_ethereum_primitives::Block;
 
 /// `StatelessInput` is a convenience structure for serializing the input needed

@@ -205,9 +205,7 @@ where
     };
 
     // First verify that the pre-state reads are correct
-    let (mut trie, bytecode) =
-        track_cycles!("verify_witness", T::new(&witness, pre_state_root)?);
-
+    let (mut trie, bytecode) = track_cycles!("verify_witness", T::new(&witness, pre_state_root)?);
 
     // Create an in-memory database that will use the reads to validate the block
     let db = WitnessDatabase::new(&trie, bytecode, ancestor_hashes);
@@ -290,7 +288,7 @@ where
 ///
 /// If both checks pass, it returns a [`BTreeMap`] mapping the block number of each
 /// ancestor header to its corresponding block hash.
-fn compute_ancestor_hashes(
+pub(crate) fn compute_ancestor_hashes(
     current_block: &RecoveredBlock<Block>,
     ancestor_headers: &[Header],
 ) -> Result<BTreeMap<u64, B256>, StatelessValidationError> {
