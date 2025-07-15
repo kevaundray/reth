@@ -65,6 +65,8 @@ pub use alloy_rpc_types_debug::ExecutionWitness;
 
 use reth_ethereum_primitives::Block;
 
+pub use alloy_genesis::{ChainConfig, Genesis};
+
 /// `StatelessInput` is a convenience structure for serializing the input needed
 /// for the stateless validation function.
 #[serde_with::serde_as]
@@ -77,6 +79,9 @@ pub struct StatelessInput {
     pub block: Block,
     /// `ExecutionWitness` for the stateless validation function
     pub witness: ExecutionWitness,
+    /// Chain configuration for the stateless validation function
+    #[serde_as(as = "alloy_genesis::serde_bincode_compat::ChainConfig<'_>")]
+    pub chain_config: ChainConfig,
 }
 
 /// Tracks the amount of cycles a region of code takes up
