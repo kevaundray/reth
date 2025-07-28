@@ -47,6 +47,7 @@ pub use validation::stateless_validation_with_trie;
 pub mod validation;
 pub(crate) mod witness_db;
 
+pub mod chain_spec;
 /// ForkSpec module
 /// This is needed because ChainSpec is not serializable (neither is genesis)
 ///

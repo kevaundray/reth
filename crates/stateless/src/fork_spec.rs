@@ -1,7 +1,10 @@
+use alloy_eips::{eip6110::MAINNET_DEPOSIT_CONTRACT_ADDRESS, BlobScheduleBlobParams};
 // This is here so we don't pull in the EF-tests.
 // We need to think more about how we will parse in the chain-spec
-use reth_chainspec::{ChainSpec, ChainSpecBuilder};
+use reth_chainspec::{Chain, ChainSpecBuilder};
 use serde::{Deserialize, Serialize};
+
+use crate::chain_spec::ChainSpec;
 
 /// Fork specification.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Ord, Clone, Copy, Serialize, Deserialize)]
@@ -61,9 +64,9 @@ pub enum ForkSpec {
 
 impl From<ForkSpec> for ChainSpec {
     fn from(fork_spec: ForkSpec) -> Self {
-        let spec_builder = ChainSpecBuilder::mainnet();
+        let spec_builder = ChainSpecBuilder::default();
 
-        match fork_spec {
+        let hardforks = match fork_spec {
             ForkSpec::Frontier => spec_builder.frontier_activated(),
             ForkSpec::Homestead | ForkSpec::FrontierToHomesteadAt5 => {
                 spec_builder.homestead_activated()
@@ -72,17 +75,17 @@ impl From<ForkSpec> for ChainSpec {
                 spec_builder.tangerine_whistle_activated()
             }
             ForkSpec::EIP158 => spec_builder.spurious_dragon_activated(),
-            ForkSpec::Byzantium |
-            ForkSpec::EIP158ToByzantiumAt5 |
-            ForkSpec::ConstantinopleFix |
-            ForkSpec::ByzantiumToConstantinopleFixAt5 => spec_builder.byzantium_activated(),
+            ForkSpec::Byzantium
+            | ForkSpec::EIP158ToByzantiumAt5
+            | ForkSpec::ConstantinopleFix
+            | ForkSpec::ByzantiumToConstantinopleFixAt5 => spec_builder.byzantium_activated(),
             ForkSpec::Istanbul => spec_builder.istanbul_activated(),
             ForkSpec::Berlin => spec_builder.berlin_activated(),
             ForkSpec::London | ForkSpec::BerlinToLondonAt5 => spec_builder.london_activated(),
-            ForkSpec::Merge |
-            ForkSpec::MergeEOF |
-            ForkSpec::MergeMeterInitCode |
-            ForkSpec::MergePush0 => spec_builder.paris_activated(),
+            ForkSpec::Merge
+            | ForkSpec::MergeEOF
+            | ForkSpec::MergeMeterInitCode
+            | ForkSpec::MergePush0 => spec_builder.paris_activated(),
             ForkSpec::Shanghai => spec_builder.shanghai_activated(),
             ForkSpec::Cancun => spec_builder.cancun_activated(),
             ForkSpec::ByzantiumToConstantinopleAt5 | ForkSpec::Constantinople => {
@@ -91,5 +94,13 @@ impl From<ForkSpec> for ChainSpec {
             ForkSpec::Prague => spec_builder.prague_activated(),
         }
         .build()
+        .hardforks;
+
+        Self {
+            chain: Chain::mainnet(),
+            hardforks,
+            deposit_contract_address: Some(MAINNET_DEPOSIT_CONTRACT_ADDRESS),
+            blob_params: BlobScheduleBlobParams::default(),
+        }
     }
 }
