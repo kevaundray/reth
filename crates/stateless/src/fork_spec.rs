@@ -65,7 +65,9 @@ pub enum ForkSpec {
 
 impl From<ForkSpec> for ChainSpec {
     fn from(fork_spec: ForkSpec) -> Self {
-        let spec_builder = ChainSpecBuilder::default().genesis(Genesis::default());
+        // We initialize with empty genesis since we only use hardforks from the constructed ChainSpec.
+        let spec_builder =
+            ChainSpecBuilder::default().genesis(Genesis::default()).chain(Chain::mainnet());
 
         let hardforks = match fork_spec {
             ForkSpec::Frontier => spec_builder.frontier_activated(),
