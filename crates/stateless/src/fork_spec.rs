@@ -1,4 +1,5 @@
 use alloy_eips::{eip6110::MAINNET_DEPOSIT_CONTRACT_ADDRESS, BlobScheduleBlobParams};
+use alloy_genesis::Genesis;
 // This is here so we don't pull in the EF-tests.
 // We need to think more about how we will parse in the chain-spec
 use reth_chainspec::{Chain, ChainSpecBuilder};
@@ -64,7 +65,9 @@ pub enum ForkSpec {
 
 impl From<ForkSpec> for ChainSpec {
     fn from(fork_spec: ForkSpec) -> Self {
-        let spec_builder = ChainSpecBuilder::default();
+        // We initialize with empty genesis since we only use hardforks from the constructed ChainSpec.
+        let spec_builder =
+            ChainSpecBuilder::default().genesis(Genesis::default()).chain(Chain::mainnet());
 
         let hardforks = match fork_spec {
             ForkSpec::Frontier => spec_builder.frontier_activated(),
