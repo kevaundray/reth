@@ -109,6 +109,7 @@ impl<T: TransactionOrdering> PendingPool<T> {
             independent: self.independent_transactions.values().cloned().collect(),
             invalid: Default::default(),
             new_transaction_receiver: Some(self.new_transaction_notifier.subscribe()),
+            last_priority: None,
             skip_blobs: false,
         }
     }
@@ -158,7 +159,7 @@ impl<T: TransactionOrdering> PendingPool<T> {
     /// Returns an iterator over all transactions in the pool
     pub(crate) fn all(
         &self,
-    ) -> impl Iterator<Item = Arc<ValidPoolTransaction<T::Transaction>>> + '_ {
+    ) -> impl ExactSizeIterator<Item = Arc<ValidPoolTransaction<T::Transaction>>> + '_ {
         self.by_id.values().map(|tx| tx.transaction.clone())
     }
 

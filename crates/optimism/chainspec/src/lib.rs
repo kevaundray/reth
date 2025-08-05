@@ -34,6 +34,7 @@ extern crate alloc;
 
 mod base;
 mod base_sepolia;
+mod basefee;
 
 pub mod constants;
 mod dev;
@@ -47,6 +48,7 @@ pub use superchain::*;
 
 pub use base::BASE_MAINNET;
 pub use base_sepolia::BASE_SEPOLIA;
+pub use basefee::*;
 pub use dev::OP_DEV;
 pub use op::OP_MAINNET;
 pub use op_sepolia::OP_SEPOLIA;
@@ -56,7 +58,7 @@ pub use reth_optimism_forks::*;
 
 use alloc::{boxed::Box, vec, vec::Vec};
 use alloy_chains::Chain;
-use alloy_consensus::{proofs::storage_root_unhashed, Header};
+use alloy_consensus::{proofs::storage_root_unhashed, BlockHeader, Header};
 use alloy_eips::eip7840::BlobParams;
 use alloy_genesis::Genesis;
 use alloy_hardforks::Hardfork;
@@ -285,6 +287,14 @@ impl EthChainSpec for OpChainSpec {
 
     fn final_paris_total_difficulty(&self) -> Option<U256> {
         self.inner.final_paris_total_difficulty()
+    }
+
+    fn next_block_base_fee(&self, parent: &Header, target_timestamp: u64) -> Option<u64> {
+        if self.is_holocene_active_at_timestamp(parent.timestamp()) {
+            decode_holocene_base_fee(self, parent, target_timestamp).ok()
+        } else {
+            self.inner.next_block_base_fee(parent, target_timestamp)
+        }
     }
 }
 
@@ -800,6 +810,7 @@ mod tests {
         "fjordTime": 50,
         "graniteTime": 51,
         "holoceneTime": 52,
+        "isthmusTime": 53,
         "optimism": {
           "eip1559Elasticity": 60,
           "eip1559Denominator": 70
@@ -823,6 +834,8 @@ mod tests {
         assert_eq!(actual_granite_timestamp, Some(serde_json::Value::from(51)).as_ref());
         let actual_holocene_timestamp = genesis.config.extra_fields.get("holoceneTime");
         assert_eq!(actual_holocene_timestamp, Some(serde_json::Value::from(52)).as_ref());
+        let actual_isthmus_timestamp = genesis.config.extra_fields.get("isthmusTime");
+        assert_eq!(actual_isthmus_timestamp, Some(serde_json::Value::from(53)).as_ref());
 
         let optimism_object = genesis.config.extra_fields.get("optimism").unwrap();
         assert_eq!(
@@ -869,6 +882,7 @@ mod tests {
         "fjordTime": 50,
         "graniteTime": 51,
         "holoceneTime": 52,
+        "isthmusTime": 53,
         "optimism": {
           "eip1559Elasticity": 60,
           "eip1559Denominator": 70,
@@ -893,6 +907,8 @@ mod tests {
         assert_eq!(actual_granite_timestamp, Some(serde_json::Value::from(51)).as_ref());
         let actual_holocene_timestamp = genesis.config.extra_fields.get("holoceneTime");
         assert_eq!(actual_holocene_timestamp, Some(serde_json::Value::from(52)).as_ref());
+        let actual_isthmus_timestamp = genesis.config.extra_fields.get("isthmusTime");
+        assert_eq!(actual_isthmus_timestamp, Some(serde_json::Value::from(53)).as_ref());
 
         let optimism_object = genesis.config.extra_fields.get("optimism").unwrap();
         assert_eq!(
