@@ -5,11 +5,11 @@ use alloy_consensus::Header as RethHeader;
 use alloy_eips::{eip4895::Withdrawals, eip6110::MAINNET_DEPOSIT_CONTRACT_ADDRESS, BlobScheduleBlobParams};
 use alloy_genesis::{Genesis, GenesisAccount};
 use alloy_primitives::{keccak256, Address, Bloom, Bytes, B256, B64, U256};
-use reth_chainspec::{Chain, ChainSpec, ChainSpecBuilder};
+use reth_chainspec::{Chain, ChainSpec, ChainSpecBuilder, EthereumHardfork};
 use reth_db_api::{cursor::DbDupCursorRO, tables, transaction::DbTx};
 use reth_primitives_traits::SealedHeader;
 use serde::Deserialize;
-use std::{collections::BTreeMap, ops::Deref};
+use std::{any::Any, collections::BTreeMap, ops::Deref};
 
 /// The definition of a blockchain test.
 #[derive(Debug, PartialEq, Eq, Deserialize)]
@@ -383,9 +383,19 @@ impl From<ForkSpec> for reth_stateless::chain_spec::ChainSpec {
         .build()
         .hardforks;
 
+let forks = hardforks
+            .forks_iter()
+            .map(|(hf, condition)| {
+                let fork = (hf as &dyn Any)
+                    .downcast_ref::<EthereumHardfork>()
+                    .expect("Hardfork must be an Ethereum hardfork");
+                (*fork, condition)
+            })
+            .collect::<BTreeMap<_, _>>();
+
         Self {
             chain: Chain::mainnet(),
-            hardforks,
+            forks,
             deposit_contract_address: Some(MAINNET_DEPOSIT_CONTRACT_ADDRESS),
             blob_params: BlobScheduleBlobParams::default(),
         }

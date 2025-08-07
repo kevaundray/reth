@@ -1,27 +1,37 @@
-use core::fmt::Display;
+use core::{any::Any, fmt::Display};
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, collections::btree_map::BTreeMap, vec::Vec};
 use alloy_consensus::Header;
-use alloy_eips::BlobScheduleBlobParams;
+use alloy_eips::{eip7840::BlobParams, BlobScheduleBlobParams};
 use alloy_genesis::Genesis;
 use alloy_primitives::{Address, B256, U256};
 use reth_chainspec::{
-    BaseFeeParams, Chain, ChainHardforks, DepositContract, EthChainSpec, EthereumHardfork,
-    EthereumHardforks, ForkCondition, ForkFilter, ForkId, Hardfork, Hardforks, Head,
+    BaseFeeParams, Chain, DepositContract, EthChainSpec, EthereumHardfork, EthereumHardforks,
+    ForkCondition, ForkFilter, ForkId, Hardfork, Hardforks, Head,
 };
 use reth_evm::eth::spec::EthExecutorSpec;
+use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DisplayFromStr};
 
-#[derive(Debug, Clone)]
+/// An Ethereum chain specification.
+#[serde_as]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChainSpec {
+    /// The chain ID
+    #[serde_as(as = "DisplayFromStr")]
     pub chain: Chain,
-    pub hardforks: ChainHardforks,
+    /// The active hard forks and their activation conditions
+    pub forks: BTreeMap<EthereumHardfork, ForkCondition>,
+    /// The deposit contract deployed for `PoS`
     pub deposit_contract_address: Option<Address>,
+    /// The settings passed for blob configurations for specific hardforks.
+    #[serde(with = "BlobScheduleBlobParamsMirror")]
     pub blob_params: BlobScheduleBlobParams,
 }
 
 impl EthereumHardforks for ChainSpec {
     fn ethereum_fork_activation(&self, fork: EthereumHardfork) -> ForkCondition {
-        self.hardforks.get(fork).unwrap_or_default()
+        self.forks.get(&fork).copied().unwrap_or_default()
     }
 }
 
@@ -33,11 +43,15 @@ impl EthExecutorSpec for ChainSpec {
 
 impl Hardforks for ChainSpec {
     fn fork<H: Hardfork>(&self, fork: H) -> ForkCondition {
-        self.hardforks.fork(fork)
+        if let Some(eth_fork) = (&fork as &dyn Any).downcast_ref::<EthereumHardfork>() {
+            self.ethereum_fork_activation(*eth_fork)
+        } else {
+            ForkCondition::Never
+        }
     }
 
     fn forks_iter(&self) -> impl Iterator<Item = (&dyn Hardfork, ForkCondition)> {
-        self.hardforks.forks_iter()
+        self.forks.iter().map(|(eth_fork, condition)| (eth_fork as &dyn Hardfork, *condition))
     }
 
     fn fork_id(&self, _head: &Head) -> ForkId {
@@ -119,4 +133,16 @@ impl EthChainSpec for ChainSpec {
             None
         }
     }
+}
+
+// FIXME: this is a temporary workaround since `BlobScheduleBlobParams` doesn't support serde.
+// This can be removed if we add support in `alloy-eips` which should be easy since it already has structs
+// implementing serde guarded by a feature flag.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(remote = "BlobScheduleBlobParams")]
+struct BlobScheduleBlobParamsMirror {
+    pub cancun: BlobParams,
+    pub prague: BlobParams,
+    pub osaka: BlobParams,
+    pub scheduled: Vec<(u64, BlobParams)>,
 }
