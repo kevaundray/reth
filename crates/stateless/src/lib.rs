@@ -38,6 +38,7 @@ extern crate alloc;
 /// Sparse trie implementation for stateless validation
 pub mod trie;
 
+use alloy_genesis::ChainConfig;
 #[doc(inline)]
 pub use trie::StatelessTrie;
 #[doc(inline)]
@@ -66,6 +67,8 @@ pub struct StatelessInput {
     pub block: Block,
     /// `ExecutionWitness` for the stateless validation function
     pub witness: ExecutionWitness,
+    /// Chain configuration
+    pub chain_config: ChainConfig,
 }
 
 /// Tracks the amount of cycles a region of code takes up
