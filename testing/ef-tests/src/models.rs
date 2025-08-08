@@ -5,9 +5,11 @@ use alloy_consensus::Header as RethHeader;
 use alloy_eips::{
     eip4895::Withdrawals, eip6110::MAINNET_DEPOSIT_CONTRACT_ADDRESS, BlobScheduleBlobParams,
 };
-use alloy_genesis::{Genesis, GenesisAccount};
+use alloy_genesis::{ChainConfig, Genesis, GenesisAccount};
 use alloy_primitives::{keccak256, Address, Bloom, Bytes, B256, B64, U256};
-use reth_chainspec::{Chain, ChainSpec, ChainSpecBuilder};
+use reth_chainspec::{
+    Chain, ChainHardforks, ChainSpec, ChainSpecBuilder, EthereumHardfork, ForkCondition,
+};
 use reth_db_api::{cursor::DbDupCursorRO, tables, transaction::DbTx};
 use reth_primitives_traits::SealedHeader;
 use serde::Deserialize;
@@ -318,7 +320,7 @@ impl From<ForkSpec> for ChainSpec {
     fn from(fork_spec: ForkSpec) -> Self {
         let spec_builder = ChainSpecBuilder::mainnet();
 
-        match fork_spec {
+        let mut chain_spec = match fork_spec {
             ForkSpec::Frontier => spec_builder.frontier_activated(),
             ForkSpec::Homestead | ForkSpec::FrontierToHomesteadAt5 => {
                 spec_builder.homestead_activated()
@@ -345,8 +347,68 @@ impl From<ForkSpec> for ChainSpec {
             }
             ForkSpec::Prague => spec_builder.prague_activated(),
         }
-        .build()
+        .build();
+
+        fill_genesis_config(
+            &mut chain_spec.genesis.config,
+            &chain_spec.hardforks,
+            Chain::mainnet().id(),
+        );
+
+        chain_spec
     }
+}
+
+fn fill_genesis_config(cfg: &mut ChainConfig, hardforks: &ChainHardforks, chain_id: u64) {
+    cfg.chain_id = chain_id;
+    // Helpers to extract activation values from ForkCondition
+    let get_block = |hf: EthereumHardfork| -> Option<u64> {
+        match hardforks.fork(hf) {
+            ForkCondition::Block(b) => Some(b),
+            ForkCondition::TTD { activation_block_number, .. } => Some(activation_block_number),
+            _ => None,
+        }
+    };
+    let get_time = |hf: EthereumHardfork| -> Option<u64> {
+        match hardforks.fork(hf) {
+            ForkCondition::Timestamp(t) => Some(t),
+            _ => None,
+        }
+    };
+
+    // Legacy block-based forks
+    cfg.homestead_block = get_block(EthereumHardfork::Homestead);
+    cfg.dao_fork_block = get_block(EthereumHardfork::Dao);
+    cfg.dao_fork_support = cfg.dao_fork_block.is_some();
+    cfg.eip150_block = get_block(EthereumHardfork::Tangerine);
+    // Spurious Dragon covers both eip155 and eip158
+    let spurious = get_block(EthereumHardfork::SpuriousDragon);
+    cfg.eip155_block = spurious;
+    cfg.eip158_block = spurious;
+    cfg.byzantium_block = get_block(EthereumHardfork::Byzantium);
+    cfg.constantinople_block = get_block(EthereumHardfork::Constantinople);
+    cfg.petersburg_block = get_block(EthereumHardfork::Petersburg);
+    cfg.istanbul_block = get_block(EthereumHardfork::Istanbul);
+    cfg.muir_glacier_block = get_block(EthereumHardfork::MuirGlacier);
+    cfg.berlin_block = get_block(EthereumHardfork::Berlin);
+    cfg.london_block = get_block(EthereumHardfork::London);
+    cfg.arrow_glacier_block = get_block(EthereumHardfork::ArrowGlacier);
+    cfg.gray_glacier_block = get_block(EthereumHardfork::GrayGlacier);
+
+    // Merge (Paris) via TTD
+    if let ForkCondition::TTD { total_difficulty, fork_block, .. } =
+        hardforks.fork(EthereumHardfork::Paris)
+    {
+        cfg.terminal_total_difficulty = Some(total_difficulty);
+        cfg.terminal_total_difficulty_passed = true;
+        cfg.merge_netsplit_block = fork_block;
+    }
+
+    // Timestamp-based forks
+    cfg.shanghai_time = get_time(EthereumHardfork::Shanghai);
+    cfg.cancun_time = get_time(EthereumHardfork::Cancun);
+    cfg.prague_time = get_time(EthereumHardfork::Prague);
+    cfg.osaka_time = get_time(EthereumHardfork::Osaka);
 }
 
 impl From<ForkSpec> for reth_stateless::chain_spec::ChainSpec {
