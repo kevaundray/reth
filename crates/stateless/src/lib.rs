@@ -44,6 +44,8 @@ pub use trie::StatelessTrie;
 #[doc(inline)]
 pub use validation::stateless_validation_with_trie;
 
+pub use alloy_genesis::Genesis;
+
 /// Implementation of stateless validation
 pub mod validation;
 pub(crate) mod witness_db;
