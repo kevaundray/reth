@@ -17,7 +17,7 @@ use alloy_consensus::{
 use alloy_eips::{
     eip1559::INITIAL_BASE_FEE, eip7685::EMPTY_REQUESTS_HASH, eip7892::BlobScheduleBlobParams,
 };
-use alloy_genesis::Genesis;
+use alloy_genesis::{ChainConfig, Genesis};
 use alloy_primitives::{address, b256, Address, BlockNumber, B256, U256};
 use alloy_trie::root::state_root_ref_unhashed;
 use core::fmt::Debug;
@@ -87,9 +87,10 @@ pub fn make_genesis_header(genesis: &Genesis, hardforks: &ChainHardforks) -> Hea
 
 /// The Ethereum mainnet spec
 pub static MAINNET: LazyLock<Arc<ChainSpec>> = LazyLock::new(|| {
-    let genesis = serde_json::from_str(include_str!("../res/genesis/mainnet.json"))
+    let mut genesis: Genesis = serde_json::from_str(include_str!("../res/genesis/mainnet.json"))
         .expect("Can't deserialize Mainnet genesis json");
     let hardforks = EthereumHardfork::mainnet().into();
+fill_genesis_config(&mut genesis.config, &hardforks, Some(Chain::mainnet()));
     let mut spec = ChainSpec {
         chain: Chain::mainnet(),
         genesis_header: SealedHeader::new(
@@ -965,7 +966,8 @@ impl ChainSpecBuilder {
                 }
             })
         };
-        let genesis = self.genesis.expect("The genesis is required");
+        let mut genesis = self.genesis.expect("The genesis is required");
+        fill_genesis_config(&mut genesis.config, &self.hardforks, self.chain);
         ChainSpec {
             chain: self.chain.expect("The chain is required"),
             genesis_header: SealedHeader::new_unhashed(make_genesis_header(
@@ -979,6 +981,59 @@ impl ChainSpecBuilder {
             ..Default::default()
         }
     }
+}
+
+fn fill_genesis_config(cfg: &mut ChainConfig, hardforks: &ChainHardforks, chain: Option<Chain>) {
+    cfg.chain_id = chain.map(|c| c.id()).unwrap_or_default();
+    // Helpers to extract activation values from ForkCondition
+    let get_block = |hf: EthereumHardfork| -> Option<u64> {
+        match hardforks.fork(hf) {
+            ForkCondition::Block(b) => Some(b),
+            ForkCondition::TTD { activation_block_number, .. } => Some(activation_block_number),
+            _ => None,
+        }
+    };
+    let get_time = |hf: EthereumHardfork| -> Option<u64> {
+        match hardforks.fork(hf) {
+            ForkCondition::Timestamp(t) => Some(t),
+            _ => None,
+        }
+    };
+
+    // Legacy block-based forks
+    cfg.homestead_block = get_block(EthereumHardfork::Homestead);
+    cfg.dao_fork_block = get_block(EthereumHardfork::Dao);
+    cfg.dao_fork_support = cfg.dao_fork_block.is_some();
+    // TODO: why there isn't a consolidated Tangerine Whistle fork?
+    cfg.eip150_block = get_block(EthereumHardfork::Tangerine);
+    cfg.eip158_block = get_block(EthereumHardfork::Tangerine);
+    // TODO: why there isn't a Spurious Dragon fork?
+    // More EIPs than EIP-155 were activated there, see: https://ethereum.org/en/history/#spurious-dragon
+    cfg.eip155_block = get_block(EthereumHardfork::SpuriousDragon);
+    cfg.byzantium_block = get_block(EthereumHardfork::Byzantium);
+    cfg.constantinople_block = get_block(EthereumHardfork::Constantinople);
+    cfg.petersburg_block = get_block(EthereumHardfork::Petersburg);
+    cfg.istanbul_block = get_block(EthereumHardfork::Istanbul);
+    cfg.muir_glacier_block = get_block(EthereumHardfork::MuirGlacier);
+    cfg.berlin_block = get_block(EthereumHardfork::Berlin);
+    cfg.london_block = get_block(EthereumHardfork::London);
+    cfg.arrow_glacier_block = get_block(EthereumHardfork::ArrowGlacier);
+    cfg.gray_glacier_block = get_block(EthereumHardfork::GrayGlacier);
+
+    // Merge (Paris) via TTD
+    if let ForkCondition::TTD { total_difficulty, fork_block, .. } =
+        hardforks.fork(EthereumHardfork::Paris)
+    {
+        cfg.terminal_total_difficulty = Some(total_difficulty);
+        cfg.terminal_total_difficulty_passed = true;
+        cfg.merge_netsplit_block = fork_block;
+    }
+
+    // Timestamp-based forks
+    cfg.shanghai_time = get_time(EthereumHardfork::Shanghai);
+    cfg.cancun_time = get_time(EthereumHardfork::Cancun);
+    cfg.prague_time = get_time(EthereumHardfork::Prague);
+    cfg.osaka_time = get_time(EthereumHardfork::Osaka);
 }
 
 impl From<&Arc<ChainSpec>> for ChainSpecBuilder {

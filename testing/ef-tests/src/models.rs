@@ -320,7 +320,7 @@ impl From<ForkSpec> for ChainSpec {
     fn from(fork_spec: ForkSpec) -> Self {
         let spec_builder = ChainSpecBuilder::mainnet();
 
-        let mut chain_spec = match fork_spec {
+        let chain_spec = match fork_spec {
             ForkSpec::Frontier => spec_builder.frontier_activated(),
             ForkSpec::Homestead | ForkSpec::FrontierToHomesteadAt5 => {
                 spec_builder.homestead_activated()
@@ -349,67 +349,8 @@ impl From<ForkSpec> for ChainSpec {
         }
         .build();
 
-        fill_genesis_config(
-            &mut chain_spec.genesis.config,
-            &chain_spec.hardforks,
-            Chain::mainnet().id(),
-        );
-
         chain_spec
     }
-}
-
-fn fill_genesis_config(cfg: &mut ChainConfig, hardforks: &ChainHardforks, chain_id: u64) {
-    cfg.chain_id = chain_id;
-    // Helpers to extract activation values from ForkCondition
-    let get_block = |hf: EthereumHardfork| -> Option<u64> {
-        match hardforks.fork(hf) {
-            ForkCondition::Block(b) => Some(b),
-            ForkCondition::TTD { activation_block_number, .. } => Some(activation_block_number),
-            _ => None,
-        }
-    };
-    let get_time = |hf: EthereumHardfork| -> Option<u64> {
-        match hardforks.fork(hf) {
-            ForkCondition::Timestamp(t) => Some(t),
-            _ => None,
-        }
-    };
-
-    // Legacy block-based forks
-    cfg.homestead_block = get_block(EthereumHardfork::Homestead);
-    cfg.dao_fork_block = get_block(EthereumHardfork::Dao);
-    cfg.dao_fork_support = cfg.dao_fork_block.is_some();
-    // TODO: why there isn't a consolidated Tangerine Whistle fork?
-    cfg.eip150_block = get_block(EthereumHardfork::Tangerine);
-    cfg.eip158_block = get_block(EthereumHardfork::Tangerine);
-    // TODO: why there isn't a Spurious Dragon fork?
-    // More EIPs than EIP-155 were activated there, see: https://ethereum.org/en/history/#spurious-dragon
-    cfg.eip155_block = get_block(EthereumHardfork::SpuriousDragon);
-    cfg.byzantium_block = get_block(EthereumHardfork::Byzantium);
-    cfg.constantinople_block = get_block(EthereumHardfork::Constantinople);
-    cfg.petersburg_block = get_block(EthereumHardfork::Petersburg);
-    cfg.istanbul_block = get_block(EthereumHardfork::Istanbul);
-    cfg.muir_glacier_block = get_block(EthereumHardfork::MuirGlacier);
-    cfg.berlin_block = get_block(EthereumHardfork::Berlin);
-    cfg.london_block = get_block(EthereumHardfork::London);
-    cfg.arrow_glacier_block = get_block(EthereumHardfork::ArrowGlacier);
-    cfg.gray_glacier_block = get_block(EthereumHardfork::GrayGlacier);
-
-    // Merge (Paris) via TTD
-    if let ForkCondition::TTD { total_difficulty, fork_block, .. } =
-        hardforks.fork(EthereumHardfork::Paris)
-    {
-        cfg.terminal_total_difficulty = Some(total_difficulty);
-        cfg.terminal_total_difficulty_passed = true;
-        cfg.merge_netsplit_block = fork_block;
-    }
-
-    // Timestamp-based forks
-    cfg.shanghai_time = get_time(EthereumHardfork::Shanghai);
-    cfg.cancun_time = get_time(EthereumHardfork::Cancun);
-    cfg.prague_time = get_time(EthereumHardfork::Prague);
-    cfg.osaka_time = get_time(EthereumHardfork::Osaka);
 }
 
 impl From<ForkSpec> for reth_stateless::chain_spec::ChainSpec {
