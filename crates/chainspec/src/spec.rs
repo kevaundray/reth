@@ -15,7 +15,8 @@ use alloy_consensus::{
     Header,
 };
 use alloy_eips::{
-    eip1559::INITIAL_BASE_FEE, eip7685::EMPTY_REQUESTS_HASH, eip7892::BlobScheduleBlobParams,
+    eip1559::INITIAL_BASE_FEE, eip6110::MAINNET_DEPOSIT_CONTRACT_ADDRESS,
+eip7685::EMPTY_REQUESTS_HASH, eip7892::BlobScheduleBlobParams,
 };
 use alloy_genesis::{ChainConfig, Genesis};
 use alloy_primitives::{address, b256, Address, BlockNumber, B256, U256};
@@ -90,7 +91,12 @@ pub static MAINNET: LazyLock<Arc<ChainSpec>> = LazyLock::new(|| {
     let mut genesis: Genesis = serde_json::from_str(include_str!("../res/genesis/mainnet.json"))
         .expect("Can't deserialize Mainnet genesis json");
     let hardforks = EthereumHardfork::mainnet().into();
-fill_genesis_config(&mut genesis.config, &hardforks, Some(Chain::mainnet()));
+fill_genesis_config(
+&mut genesis.config,
+&hardforks,
+Some(Chain::mainnet()),
+        Some(MAINNET_DEPOSIT_CONTRACT_ADDRESS),
+);
     let mut spec = ChainSpec {
         chain: Chain::mainnet(),
         genesis_header: SealedHeader::new(
@@ -967,7 +973,7 @@ impl ChainSpecBuilder {
             })
         };
         let mut genesis = self.genesis.expect("The genesis is required");
-        fill_genesis_config(&mut genesis.config, &self.hardforks, self.chain);
+        fill_genesis_config(&mut genesis.config, &self.hardforks, self.chain, None);
         ChainSpec {
             chain: self.chain.expect("The chain is required"),
             genesis_header: SealedHeader::new_unhashed(make_genesis_header(
@@ -983,8 +989,14 @@ impl ChainSpecBuilder {
     }
 }
 
-fn fill_genesis_config(cfg: &mut ChainConfig, hardforks: &ChainHardforks, chain: Option<Chain>) {
+fn fill_genesis_config(
+    cfg: &mut ChainConfig,
+    hardforks: &ChainHardforks,
+    chain: Option<Chain>,
+    deposit_contract: Option<Address>,
+) {
     cfg.chain_id = chain.map(|c| c.id()).unwrap_or_default();
+    cfg.deposit_contract_address = deposit_contract;
     // Helpers to extract activation values from ForkCondition
     let get_block = |hf: EthereumHardfork| -> Option<u64> {
         match hardforks.fork(hf) {
