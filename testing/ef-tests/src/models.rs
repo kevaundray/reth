@@ -380,11 +380,12 @@ fn fill_genesis_config(cfg: &mut ChainConfig, hardforks: &ChainHardforks, chain_
     cfg.homestead_block = get_block(EthereumHardfork::Homestead);
     cfg.dao_fork_block = get_block(EthereumHardfork::Dao);
     cfg.dao_fork_support = cfg.dao_fork_block.is_some();
+    // TODO: why there isn't a consolidated Tangerine Whistle fork?
     cfg.eip150_block = get_block(EthereumHardfork::Tangerine);
-    // Spurious Dragon covers both eip155 and eip158
-    let spurious = get_block(EthereumHardfork::SpuriousDragon);
-    cfg.eip155_block = spurious;
-    cfg.eip158_block = spurious;
+    cfg.eip158_block = get_block(EthereumHardfork::Tangerine);
+    // TODO: why there isn't a Spurious Dragon fork?
+    // More EIPs than EIP-155 were activated there, see: https://ethereum.org/en/history/#spurious-dragon
+    cfg.eip155_block = get_block(EthereumHardfork::SpuriousDragon);
     cfg.byzantium_block = get_block(EthereumHardfork::Byzantium);
     cfg.constantinople_block = get_block(EthereumHardfork::Constantinople);
     cfg.petersburg_block = get_block(EthereumHardfork::Petersburg);
