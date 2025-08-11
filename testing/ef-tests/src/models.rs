@@ -343,6 +343,7 @@ impl From<ForkSpec> for ChainSpec {
             }
             ForkSpec::Prague => spec_builder.prague_activated(),
         }
+        .fill_genesis_config(true)
         .build();
 
         chain_spec
