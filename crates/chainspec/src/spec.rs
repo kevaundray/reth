@@ -15,9 +15,10 @@ use alloy_consensus::{
     Header,
 };
 use alloy_eips::{
-    eip1559::INITIAL_BASE_FEE, eip7685::EMPTY_REQUESTS_HASH, eip7892::BlobScheduleBlobParams,
+    eip1559::INITIAL_BASE_FEE, eip6110::MAINNET_DEPOSIT_CONTRACT_ADDRESS,
+    eip7685::EMPTY_REQUESTS_HASH, eip7892::BlobScheduleBlobParams,
 };
-use alloy_genesis::Genesis;
+use alloy_genesis::{ChainConfig, Genesis};
 use alloy_primitives::{address, b256, Address, BlockNumber, B256, U256};
 use alloy_trie::root::state_root_ref_unhashed;
 use core::fmt::Debug;
@@ -87,9 +88,15 @@ pub fn make_genesis_header(genesis: &Genesis, hardforks: &ChainHardforks) -> Hea
 
 /// The Ethereum mainnet spec
 pub static MAINNET: LazyLock<Arc<ChainSpec>> = LazyLock::new(|| {
-    let genesis = serde_json::from_str(include_str!("../res/genesis/mainnet.json"))
+    let mut genesis: Genesis = serde_json::from_str(include_str!("../res/genesis/mainnet.json"))
         .expect("Can't deserialize Mainnet genesis json");
     let hardforks = EthereumHardfork::mainnet().into();
+    fill_chainconfig(
+        &mut genesis.config,
+        &hardforks,
+        Some(Chain::mainnet()),
+        Some(MAINNET_DEPOSIT_CONTRACT_ADDRESS),
+    );
     let mut spec = ChainSpec {
         chain: Chain::mainnet(),
         genesis_header: SealedHeader::new(
@@ -384,7 +391,7 @@ impl ChainSpec {
                 // given timestamp.
                 for (fork, params) in bf_params.iter().rev() {
                     if self.hardforks.is_fork_active_at_timestamp(fork.clone(), timestamp) {
-                        return *params
+                        return *params;
                     }
                 }
 
@@ -403,7 +410,7 @@ impl ChainSpec {
                 // given timestamp.
                 for (fork, params) in bf_params.iter().rev() {
                     if self.hardforks.is_fork_active_at_block(fork.clone(), block_number) {
-                        return *params
+                        return *params;
                     }
                 }
 
@@ -477,8 +484,8 @@ impl ChainSpec {
             // We filter out TTD-based forks w/o a pre-known block since those do not show up in the
             // fork filter.
             Some(match condition {
-                ForkCondition::Block(block) |
-                ForkCondition::TTD { fork_block: Some(block), .. } => ForkFilterKey::Block(block),
+                ForkCondition::Block(block)
+                | ForkCondition::TTD { fork_block: Some(block), .. } => ForkFilterKey::Block(block),
                 ForkCondition::Timestamp(time) => ForkFilterKey::Time(time),
                 _ => return None,
             })
@@ -505,8 +512,8 @@ impl ChainSpec {
         for (_, cond) in self.hardforks.forks_iter() {
             // handle block based forks and the sepolia merge netsplit block edge case (TTD
             // ForkCondition with Some(block))
-            if let ForkCondition::Block(block) |
-            ForkCondition::TTD { fork_block: Some(block), .. } = cond
+            if let ForkCondition::Block(block)
+            | ForkCondition::TTD { fork_block: Some(block), .. } = cond
             {
                 if head.number >= block {
                     // skip duplicated hardforks: hardforks enabled at genesis block
@@ -517,7 +524,7 @@ impl ChainSpec {
                 } else {
                     // we can return here because this block fork is not active, so we set the
                     // `next` value
-                    return ForkId { hash: forkhash, next: block }
+                    return ForkId { hash: forkhash, next: block };
                 }
             }
         }
@@ -539,7 +546,7 @@ impl ChainSpec {
                 // can safely return here because we have already handled all block forks and
                 // have handled all active timestamp forks, and set the next value to the
                 // timestamp that is known but not active yet
-                return ForkId { hash: forkhash, next: timestamp }
+                return ForkId { hash: forkhash, next: timestamp };
             }
         }
 
@@ -784,6 +791,7 @@ pub struct ChainSpecBuilder {
     chain: Option<Chain>,
     genesis: Option<Genesis>,
     hardforks: ChainHardforks,
+    fill_genesis_config: bool,
 }
 
 impl ChainSpecBuilder {
@@ -793,6 +801,7 @@ impl ChainSpecBuilder {
             chain: Some(MAINNET.chain),
             genesis: Some(MAINNET.genesis.clone()),
             hardforks: MAINNET.hardforks.clone(),
+            fill_genesis_config: true,
         }
     }
 }
@@ -844,9 +853,16 @@ impl ChainSpecBuilder {
         self
     }
 
+    /// Enable Dao at genesis.
+    pub fn dao_activated(mut self) -> Self {
+        self = self.frontier_activated();
+        self.hardforks.insert(EthereumHardfork::Dao, ForkCondition::Block(0));
+        self
+    }
+
     /// Enable Homestead at genesis.
     pub fn homestead_activated(mut self) -> Self {
-        self = self.frontier_activated();
+        self = self.dao_activated();
         self.hardforks.insert(EthereumHardfork::Homestead, ForkCondition::Block(0));
         self
     }
@@ -893,9 +909,16 @@ impl ChainSpecBuilder {
         self
     }
 
+    /// Enable Muir Glacier at genesis.
+    pub fn muirglacier_activated(mut self) -> Self {
+        self = self.istanbul_activated();
+        self.hardforks.insert(EthereumHardfork::MuirGlacier, ForkCondition::Block(0));
+        self
+    }
+
     /// Enable Berlin at genesis.
     pub fn berlin_activated(mut self) -> Self {
-        self = self.istanbul_activated();
+        self = self.muirglacier_activated();
         self.hardforks.insert(EthereumHardfork::Berlin, ForkCondition::Block(0));
         self
     }
@@ -907,9 +930,23 @@ impl ChainSpecBuilder {
         self
     }
 
+    /// Enable Arrow Glacier at genesis.
+    pub fn arrowglacier_activated(mut self) -> Self {
+        self = self.london_activated();
+        self.hardforks.insert(EthereumHardfork::ArrowGlacier, ForkCondition::Block(0));
+        self
+    }
+
+    /// Enable Gray Glacier at genesis.
+    pub fn grayglacier_activated(mut self) -> Self {
+        self = self.arrowglacier_activated();
+        self.hardforks.insert(EthereumHardfork::GrayGlacier, ForkCondition::Block(0));
+        self
+    }
+
     /// Enable Paris at genesis.
     pub fn paris_activated(mut self) -> Self {
-        self = self.london_activated();
+        self = self.grayglacier_activated();
         self.hardforks.insert(
             EthereumHardfork::Paris,
             ForkCondition::TTD {
@@ -949,6 +986,12 @@ impl ChainSpecBuilder {
         self
     }
 
+    /// Enable overriding genesis chain configuration from defined hardforks.
+    pub const fn fill_genesis_config(mut self, enable: bool) -> Self {
+        self.fill_genesis_config = enable;
+        self
+    }
+
     /// Build the resulting [`ChainSpec`].
     ///
     /// # Panics
@@ -965,7 +1008,10 @@ impl ChainSpecBuilder {
                 }
             })
         };
-        let genesis = self.genesis.expect("The genesis is required");
+        let mut genesis = self.genesis.expect("The genesis is required");
+        if self.fill_genesis_config {
+            fill_chainconfig(&mut genesis.config, &self.hardforks, self.chain, None);
+        }
         ChainSpec {
             chain: self.chain.expect("The chain is required"),
             genesis_header: SealedHeader::new_unhashed(make_genesis_header(
@@ -981,12 +1027,69 @@ impl ChainSpecBuilder {
     }
 }
 
+fn fill_chainconfig(
+    cfg: &mut ChainConfig,
+    hardforks: &ChainHardforks,
+    chain: Option<Chain>,
+    deposit_contract: Option<Address>,
+) {
+    cfg.chain_id = chain.map(|c| c.id()).unwrap_or_default();
+    cfg.deposit_contract_address = deposit_contract;
+    // Helpers to extract activation values from ForkCondition
+    let get_block = |hf: EthereumHardfork| -> Option<u64> {
+        match hardforks.fork(hf) {
+            ForkCondition::Block(b) => Some(b),
+            ForkCondition::TTD { activation_block_number, .. } => Some(activation_block_number),
+            _ => None,
+        }
+    };
+    let get_time = |hf: EthereumHardfork| -> Option<u64> {
+        match hardforks.fork(hf) {
+            ForkCondition::Timestamp(t) => Some(t),
+            _ => None,
+        }
+    };
+
+    // Legacy block-based forks
+    cfg.homestead_block = get_block(EthereumHardfork::Homestead);
+    cfg.dao_fork_block = get_block(EthereumHardfork::Dao);
+    cfg.dao_fork_support = cfg.dao_fork_block.is_some();
+    cfg.eip150_block = get_block(EthereumHardfork::Tangerine);
+    cfg.eip158_block = get_block(EthereumHardfork::Tangerine);
+    cfg.eip155_block = get_block(EthereumHardfork::SpuriousDragon);
+    cfg.byzantium_block = get_block(EthereumHardfork::Byzantium);
+    cfg.constantinople_block = get_block(EthereumHardfork::Constantinople);
+    cfg.petersburg_block = get_block(EthereumHardfork::Petersburg);
+    cfg.istanbul_block = get_block(EthereumHardfork::Istanbul);
+    cfg.muir_glacier_block = get_block(EthereumHardfork::MuirGlacier);
+    cfg.berlin_block = get_block(EthereumHardfork::Berlin);
+    cfg.london_block = get_block(EthereumHardfork::London);
+    cfg.arrow_glacier_block = get_block(EthereumHardfork::ArrowGlacier);
+    cfg.gray_glacier_block = get_block(EthereumHardfork::GrayGlacier);
+
+    // Merge (Paris) via TTD
+    if let ForkCondition::TTD { total_difficulty, fork_block, .. } =
+        hardforks.fork(EthereumHardfork::Paris)
+    {
+        cfg.terminal_total_difficulty = Some(total_difficulty);
+        cfg.terminal_total_difficulty_passed = true;
+        cfg.merge_netsplit_block = fork_block;
+    }
+
+    // Timestamp-based forks
+    cfg.shanghai_time = get_time(EthereumHardfork::Shanghai);
+    cfg.cancun_time = get_time(EthereumHardfork::Cancun);
+    cfg.prague_time = get_time(EthereumHardfork::Prague);
+    cfg.osaka_time = get_time(EthereumHardfork::Osaka);
+}
+
 impl From<&Arc<ChainSpec>> for ChainSpecBuilder {
     fn from(value: &Arc<ChainSpec>) -> Self {
         Self {
             chain: Some(value.chain),
             genesis: Some(value.genesis.clone()),
             hardforks: value.hardforks.clone(),
+            fill_genesis_config: false,
         }
     }
 }
