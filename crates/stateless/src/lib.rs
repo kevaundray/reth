@@ -50,8 +50,6 @@ pub use alloy_genesis::Genesis;
 pub mod validation;
 pub(crate) mod witness_db;
 
-pub mod chain_spec;
-
 #[doc(inline)]
 pub use alloy_rpc_types_debug::ExecutionWitness;
 

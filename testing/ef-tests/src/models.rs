@@ -2,14 +2,10 @@
 
 use crate::{assert::assert_equal, Error};
 use alloy_consensus::Header as RethHeader;
-use alloy_eips::{
-    eip4895::Withdrawals, eip6110::MAINNET_DEPOSIT_CONTRACT_ADDRESS, BlobScheduleBlobParams,
-};
-use alloy_genesis::{ChainConfig, Genesis, GenesisAccount};
+use alloy_eips::eip4895::Withdrawals;
+use alloy_genesis::GenesisAccount;
 use alloy_primitives::{keccak256, Address, Bloom, Bytes, B256, B64, U256};
-use reth_chainspec::{
-    Chain, ChainHardforks, ChainSpec, ChainSpecBuilder, EthereumHardfork, ForkCondition,
-};
+use reth_chainspec::{ChainSpec, ChainSpecBuilder};
 use reth_db_api::{cursor::DbDupCursorRO, tables, transaction::DbTx};
 use reth_primitives_traits::SealedHeader;
 use serde::Deserialize;
@@ -350,51 +346,6 @@ impl From<ForkSpec> for ChainSpec {
         .build();
 
         chain_spec
-    }
-}
-
-impl From<ForkSpec> for reth_stateless::chain_spec::ChainSpec {
-    fn from(fork_spec: ForkSpec) -> Self {
-        // We initialize with empty genesis since we only use hardforks from the constructed ChainSpec.
-        let spec_builder =
-            ChainSpecBuilder::default().genesis(Genesis::default()).chain(Chain::mainnet());
-
-        let hardforks = match fork_spec {
-            ForkSpec::Frontier => spec_builder.frontier_activated(),
-            ForkSpec::Homestead | ForkSpec::FrontierToHomesteadAt5 => {
-                spec_builder.homestead_activated()
-            }
-            ForkSpec::EIP150 | ForkSpec::HomesteadToDaoAt5 | ForkSpec::HomesteadToEIP150At5 => {
-                spec_builder.tangerine_whistle_activated()
-            }
-            ForkSpec::EIP158 => spec_builder.spurious_dragon_activated(),
-            ForkSpec::Byzantium
-            | ForkSpec::EIP158ToByzantiumAt5
-            | ForkSpec::ConstantinopleFix
-            | ForkSpec::ByzantiumToConstantinopleFixAt5 => spec_builder.byzantium_activated(),
-            ForkSpec::Istanbul => spec_builder.istanbul_activated(),
-            ForkSpec::Berlin => spec_builder.berlin_activated(),
-            ForkSpec::London | ForkSpec::BerlinToLondonAt5 => spec_builder.london_activated(),
-            ForkSpec::Merge
-            | ForkSpec::MergeEOF
-            | ForkSpec::MergeMeterInitCode
-            | ForkSpec::MergePush0 => spec_builder.paris_activated(),
-            ForkSpec::Shanghai => spec_builder.shanghai_activated(),
-            ForkSpec::Cancun => spec_builder.cancun_activated(),
-            ForkSpec::ByzantiumToConstantinopleAt5 | ForkSpec::Constantinople => {
-                panic!("Overridden with PETERSBURG")
-            }
-            ForkSpec::Prague => spec_builder.prague_activated(),
-        }
-        .build()
-        .hardforks;
-
-        Self {
-            chain: Chain::mainnet(),
-            hardforks,
-            deposit_contract_address: Some(MAINNET_DEPOSIT_CONTRACT_ADDRESS),
-            blob_params: BlobScheduleBlobParams::default(),
-        }
     }
 }
 
