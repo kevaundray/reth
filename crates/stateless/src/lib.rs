@@ -38,28 +38,17 @@ extern crate alloc;
 /// Sparse trie implementation for stateless validation
 pub mod trie;
 
+use alloy_genesis::ChainConfig;
 #[doc(inline)]
 pub use trie::StatelessTrie;
 #[doc(inline)]
 pub use validation::stateless_validation_with_trie;
 
+pub use alloy_genesis::Genesis;
+
 /// Implementation of stateless validation
 pub mod validation;
 pub(crate) mod witness_db;
-
-pub mod chain_spec;
-/// ForkSpec module
-/// This is needed because ChainSpec is not serializable (neither is genesis)
-///
-/// Note: There is an exact copy of ForkSpec in `ef-tests` but since ef-tests is not no_std
-/// we cannot pull that in since we need ForkSpec in the guest program.
-///
-/// We convert the ef-tests version of ForkSpec in the host into the one located in here.
-///
-/// When we parse execution spec tests, we get back a ForkSpec, that we then pass into
-/// the guest program and convert it into a ChainSpec. If someone is using Hoodi/Mainnet
-/// etc, then this may not be needed, as you can just do ChainSpec::mainnet() in the guest program
-pub mod fork_spec;
 
 #[doc(inline)]
 pub use alloy_rpc_types_debug::ExecutionWitness;
@@ -78,6 +67,9 @@ pub struct StatelessInput {
     pub block: Block,
     /// `ExecutionWitness` for the stateless validation function
     pub witness: ExecutionWitness,
+    /// Chain configuration for the stateless validation function
+    #[serde_as(as = "alloy_genesis::serde_bincode_compat::ChainConfig<'_>")]
+    pub chain_config: ChainConfig,
 }
 
 /// Tracks the amount of cycles a region of code takes up

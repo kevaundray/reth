@@ -243,12 +243,12 @@ impl Account {
                 } else {
                     return Err(Error::Assertion(format!(
                         "Slot {slot:?} is missing from the database. Expected {value:?}"
-                    )))
+                    )));
                 }
             } else {
                 return Err(Error::Assertion(format!(
                     "Slot {slot:?} is missing from the database. Expected {value:?}"
-                )))
+                )));
             }
         }
 
@@ -316,7 +316,7 @@ impl From<ForkSpec> for ChainSpec {
     fn from(fork_spec: ForkSpec) -> Self {
         let spec_builder = ChainSpecBuilder::mainnet();
 
-        match fork_spec {
+        let chain_spec = match fork_spec {
             ForkSpec::Frontier => spec_builder.frontier_activated(),
             ForkSpec::Homestead | ForkSpec::FrontierToHomesteadAt5 => {
                 spec_builder.homestead_activated()
@@ -325,17 +325,17 @@ impl From<ForkSpec> for ChainSpec {
                 spec_builder.tangerine_whistle_activated()
             }
             ForkSpec::EIP158 => spec_builder.spurious_dragon_activated(),
-            ForkSpec::Byzantium |
-            ForkSpec::EIP158ToByzantiumAt5 |
-            ForkSpec::ConstantinopleFix |
-            ForkSpec::ByzantiumToConstantinopleFixAt5 => spec_builder.byzantium_activated(),
+            ForkSpec::Byzantium
+            | ForkSpec::EIP158ToByzantiumAt5
+            | ForkSpec::ConstantinopleFix
+            | ForkSpec::ByzantiumToConstantinopleFixAt5 => spec_builder.byzantium_activated(),
             ForkSpec::Istanbul => spec_builder.istanbul_activated(),
             ForkSpec::Berlin => spec_builder.berlin_activated(),
             ForkSpec::London | ForkSpec::BerlinToLondonAt5 => spec_builder.london_activated(),
-            ForkSpec::Merge |
-            ForkSpec::MergeEOF |
-            ForkSpec::MergeMeterInitCode |
-            ForkSpec::MergePush0 => spec_builder.paris_activated(),
+            ForkSpec::Merge
+            | ForkSpec::MergeEOF
+            | ForkSpec::MergeMeterInitCode
+            | ForkSpec::MergePush0 => spec_builder.paris_activated(),
             ForkSpec::Shanghai => spec_builder.shanghai_activated(),
             ForkSpec::Cancun => spec_builder.cancun_activated(),
             ForkSpec::ByzantiumToConstantinopleAt5 | ForkSpec::Constantinople => {
@@ -343,48 +343,9 @@ impl From<ForkSpec> for ChainSpec {
             }
             ForkSpec::Prague => spec_builder.prague_activated(),
         }
-        .build()
-    }
-}
+        .build();
 
-impl From<ForkSpec> for reth_stateless::fork_spec::ForkSpec {
-    fn from(value: ForkSpec) -> Self {
-        match value {
-            ForkSpec::Frontier => reth_stateless::fork_spec::ForkSpec::Frontier,
-            ForkSpec::FrontierToHomesteadAt5 => {
-                reth_stateless::fork_spec::ForkSpec::FrontierToHomesteadAt5
-            }
-            ForkSpec::Homestead => reth_stateless::fork_spec::ForkSpec::Homestead,
-            ForkSpec::HomesteadToDaoAt5 => reth_stateless::fork_spec::ForkSpec::HomesteadToDaoAt5,
-            ForkSpec::HomesteadToEIP150At5 => {
-                reth_stateless::fork_spec::ForkSpec::HomesteadToEIP150At5
-            }
-            ForkSpec::EIP150 => reth_stateless::fork_spec::ForkSpec::EIP150,
-            ForkSpec::EIP158 => reth_stateless::fork_spec::ForkSpec::EIP158,
-            ForkSpec::EIP158ToByzantiumAt5 => {
-                reth_stateless::fork_spec::ForkSpec::EIP158ToByzantiumAt5
-            }
-            ForkSpec::Byzantium => reth_stateless::fork_spec::ForkSpec::Byzantium,
-            ForkSpec::ByzantiumToConstantinopleAt5 => {
-                reth_stateless::fork_spec::ForkSpec::ByzantiumToConstantinopleAt5
-            }
-            ForkSpec::ByzantiumToConstantinopleFixAt5 => {
-                reth_stateless::fork_spec::ForkSpec::ByzantiumToConstantinopleFixAt5
-            }
-            ForkSpec::Constantinople => reth_stateless::fork_spec::ForkSpec::Constantinople,
-            ForkSpec::ConstantinopleFix => reth_stateless::fork_spec::ForkSpec::ConstantinopleFix,
-            ForkSpec::Istanbul => reth_stateless::fork_spec::ForkSpec::Istanbul,
-            ForkSpec::Berlin => reth_stateless::fork_spec::ForkSpec::Berlin,
-            ForkSpec::BerlinToLondonAt5 => reth_stateless::fork_spec::ForkSpec::BerlinToLondonAt5,
-            ForkSpec::London => reth_stateless::fork_spec::ForkSpec::London,
-            ForkSpec::Merge => reth_stateless::fork_spec::ForkSpec::Merge,
-            ForkSpec::Shanghai => reth_stateless::fork_spec::ForkSpec::Shanghai,
-            ForkSpec::MergeEOF => reth_stateless::fork_spec::ForkSpec::MergeEOF,
-            ForkSpec::MergeMeterInitCode => reth_stateless::fork_spec::ForkSpec::MergeMeterInitCode,
-            ForkSpec::MergePush0 => reth_stateless::fork_spec::ForkSpec::MergePush0,
-            ForkSpec::Cancun => reth_stateless::fork_spec::ForkSpec::Cancun,
-            ForkSpec::Prague => reth_stateless::fork_spec::ForkSpec::Prague,
-        }
+        chain_spec
     }
 }
 
