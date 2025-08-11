@@ -853,9 +853,16 @@ impl ChainSpecBuilder {
         self
     }
 
+    /// Enable Dao at genesis.
+    pub fn dao_activated(mut self) -> Self {
+        self = self.frontier_activated();
+        self.hardforks.insert(EthereumHardfork::Dao, ForkCondition::Block(0));
+        self
+    }
+
     /// Enable Homestead at genesis.
     pub fn homestead_activated(mut self) -> Self {
-        self = self.frontier_activated();
+        self = self.dao_activated();
         self.hardforks.insert(EthereumHardfork::Homestead, ForkCondition::Block(0));
         self
     }
