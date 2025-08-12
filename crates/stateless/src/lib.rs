@@ -68,6 +68,7 @@ pub struct StatelessInput {
     /// `ExecutionWitness` for the stateless validation function
     pub witness: ExecutionWitness,
     /// Chain configuration for the stateless validation function
+    #[serde(default)]
     #[serde_as(as = "alloy_genesis::serde_bincode_compat::ChainConfig<'_>")]
     pub chain_config: ChainConfig,
 }
