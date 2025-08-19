@@ -169,7 +169,8 @@ members = [
     "examples/custom-beacon-withdrawals",
     "testing/ef-tests/",
     "testing/testing-utils",
-    "crates/tracing-otlp",
+    "crates/tracing-otlp", 
+    "testing/witness-filler",
 ]
 default-members = ["bin/reth"]
 exclude = ["docs/cli"]
