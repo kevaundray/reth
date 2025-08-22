@@ -5,7 +5,7 @@ use alloy_consensus::Header as RethHeader;
 use alloy_eips::eip4895::Withdrawals;
 use alloy_genesis::GenesisAccount;
 use alloy_primitives::{keccak256, Address, Bloom, Bytes, B256, B64, U256};
-use reth_chainspec::{ChainSpec, ChainSpecBuilder};
+use reth_chainspec::{ChainSpec, ChainSpecBuilder, EthereumHardfork, ForkCondition};
 use reth_db_api::{cursor::DbDupCursorRO, tables, transaction::DbTx};
 use reth_primitives_traits::SealedHeader;
 use serde::Deserialize;
@@ -308,6 +308,8 @@ pub enum ForkSpec {
     MergePush0,
     /// Cancun
     Cancun,
+    /// Cancun to Prague at time 15k
+    CancunToPragueAtTime15k,
     /// Prague
     Prague,
 }
@@ -338,6 +340,9 @@ impl From<ForkSpec> for ChainSpec {
             | ForkSpec::MergePush0 => spec_builder.paris_activated(),
             ForkSpec::Shanghai => spec_builder.shanghai_activated(),
             ForkSpec::Cancun => spec_builder.cancun_activated(),
+            ForkSpec::CancunToPragueAtTime15k => spec_builder
+                .cancun_activated()
+                .with_fork(EthereumHardfork::Prague, ForkCondition::Timestamp(15_000)),
             ForkSpec::ByzantiumToConstantinopleAt5 | ForkSpec::Constantinople => {
                 panic!("Overridden with PETERSBURG")
             }
