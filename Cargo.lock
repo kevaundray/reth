@@ -10312,6 +10312,7 @@ name = "reth-stateless"
 version = "1.6.0"
 dependencies = [
  "alloy-consensus",
+ "alloy-genesis",
  "alloy-primitives",
  "alloy-rlp",
  "alloy-rpc-types-debug",
@@ -10330,7 +10331,6 @@ dependencies = [
  "serde",
  "serde_with",
  "thiserror 2.0.12",
- "tracing",
 ]
 
 [[package]]

@@ -31,8 +31,6 @@ reth-trie-common.workspace = true
 reth-trie-sparse.workspace = true
 reth-chainspec.workspace = true
 reth-consensus.workspace = true
-reth-network-peers.workspace = true
-tracing.workspace = true
 
 # misc
 thiserror.workspace = true
