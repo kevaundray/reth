@@ -253,7 +253,7 @@ fn run_case(
         // Consensus checks before block execution
         pre_execution_checks(chain_spec.clone(), &parent, block).map_err(|err| {
             let mut serialized_header = Vec::new();
-            parent.encode(&mut serialized_header);
+            parent.header().encode(&mut serialized_header);
             program_inputs.push((
                 block.clone(),
                 ExecutionWitness { headers: vec![serialized_header.into()], ..Default::default() },
