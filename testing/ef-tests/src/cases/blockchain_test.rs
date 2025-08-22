@@ -4,7 +4,6 @@ use crate::{
     models::{BlockchainTest, ForkSpec},
     Case, Error, Suite,
 };
-use alloy_primitives::Bytes;
 use alloy_rlp::{Decodable, Encodable};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use reth_chainspec::ChainSpec;
@@ -219,22 +218,7 @@ fn run_case(
         .map_err(|err| Error::block_failed(0, Default::default(), err))?;
 
     // Decode blocks
-    let mut blocks = Vec::with_capacity(case.blocks.len());
-    for (block_index, block) in case.blocks.iter().enumerate() {
-        // The blocks do not include the genesis block which is why we have the plus one.
-        // We also cannot use block.number because for invalid blocks, this may be incorrect.
-        let block_number = (block_index + 1) as u64;
-
-        let decoded = SealedBlock::<Block>::decode(&mut block.rlp.as_ref())
-            .map_err(|err| Error::block_failed(block_number, Default::default(), err))?;
-
-        let recovered_block = decoded
-            .clone()
-            .try_recover()
-            .map_err(|err| Error::block_failed(block_number, Default::default(), err))?;
-
-        blocks.push(recovered_block);
-    }
+    let blocks = decode_blocks(&case.blocks)?;
 
     let executor_provider = EthEvmConfig::ethereum(chain_spec.clone());
     let mut parent = genesis_block;
@@ -371,6 +355,28 @@ fn run_case(
     }
 
     Ok(program_inputs)
+}
+
+fn decode_blocks(
+    test_case_blocks: &[crate::models::Block],
+) -> Result<Vec<RecoveredBlock<Block>>, Error> {
+    let mut blocks = Vec::with_capacity(test_case_blocks.len());
+    for (block_index, block) in test_case_blocks.iter().enumerate() {
+        // The blocks do not include the genesis block which is why we have the plus one.
+        // We also cannot use block.number because for invalid blocks, this may be incorrect.
+        let block_number = (block_index + 1) as u64;
+
+        let decoded = SealedBlock::<Block>::decode(&mut block.rlp.as_ref())
+            .map_err(|err| Error::block_failed(block_number, Default::default(), err))?;
+
+        let recovered_block = decoded
+            .clone()
+            .try_recover()
+            .map_err(|err| Error::block_failed(block_number, Default::default(), err))?;
+
+        blocks.push(recovered_block);
+    }
+    Ok(blocks)
 }
 
 fn pre_execution_checks(
