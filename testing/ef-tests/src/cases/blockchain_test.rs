@@ -4,6 +4,7 @@ use crate::{
     models::{BlockchainTest, ForkSpec},
     Case, Error, Suite,
 };
+use alloy_primitives::Bytes;
 use alloy_rlp::{Decodable, Encodable};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use reth_chainspec::ChainSpec;
@@ -235,9 +236,9 @@ fn run_case(
         blocks.push(recovered_block);
     }
 
-    let mut program_inputs = Vec::new();
     let executor_provider = EthEvmConfig::ethereum(chain_spec.clone());
     let mut parent = genesis_block;
+    let mut program_inputs = Vec::new();
 
     for (block_index, block) in blocks.iter().enumerate() {
         // Note: same as the comment on `decode_blocks` as to why we cannot use block.number
@@ -251,7 +252,12 @@ fn run_case(
 
         // Consensus checks before block execution
         pre_execution_checks(chain_spec.clone(), &parent, block).map_err(|err| {
-            program_inputs.push((block.clone(), Default::default()));
+            let mut serialized_header = Vec::new();
+            parent.encode(&mut serialized_header);
+            program_inputs.push((
+                block.clone(),
+                ExecutionWitness { headers: vec![serialized_header.into()], ..Default::default() },
+            ));
             Error::block_failed(block_number, program_inputs.clone(), err)
         })?;
 
