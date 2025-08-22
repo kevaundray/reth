@@ -205,19 +205,17 @@ fn run_case(
     .try_recover()
     .unwrap();
 
-    let mut program_inputs = Vec::new();
-
     provider
         .insert_block(genesis_block.clone(), StorageLocation::Database)
-        .map_err(|err| Error::block_failed(0, program_inputs.clone(), err))?;
+        .map_err(|err| Error::block_failed(0, Default::default(), err))?;
 
     let genesis_state = case.pre.clone().into_genesis_state();
     insert_genesis_state(&provider, genesis_state.iter())
-        .map_err(|err| Error::block_failed(0, program_inputs.clone(), err))?;
+        .map_err(|err| Error::block_failed(0, Default::default(), err))?;
     insert_genesis_hashes(&provider, genesis_state.iter())
-        .map_err(|err| Error::block_failed(0, program_inputs.clone(), err))?;
+        .map_err(|err| Error::block_failed(0, Default::default(), err))?;
     insert_genesis_history(&provider, genesis_state.iter())
-        .map_err(|err| Error::block_failed(0, program_inputs.clone(), err))?;
+        .map_err(|err| Error::block_failed(0, Default::default(), err))?;
 
     // Decode blocks
     let mut blocks = Vec::with_capacity(case.blocks.len());
@@ -227,16 +225,17 @@ fn run_case(
         let block_number = (block_index + 1) as u64;
 
         let decoded = SealedBlock::<Block>::decode(&mut block.rlp.as_ref())
-            .map_err(|err| Error::block_failed(block_number, program_inputs.clone(), err))?;
+            .map_err(|err| Error::block_failed(block_number, Default::default(), err))?;
 
         let recovered_block = decoded
             .clone()
             .try_recover()
-            .map_err(|err| Error::block_failed(block_number, program_inputs.clone(), err))?;
+            .map_err(|err| Error::block_failed(block_number, Default::default(), err))?;
 
         blocks.push(recovered_block);
     }
 
+    let mut program_inputs = Vec::new();
     let executor_provider = EthEvmConfig::ethereum(chain_spec.clone());
     let mut parent = genesis_block;
 
@@ -245,13 +244,16 @@ fn run_case(
         let block_number = (block_index + 1) as u64;
 
         // Insert the block into the database
-        provider
-            .insert_block(block.clone(), StorageLocation::Database)
-            .map_err(|err| Error::block_failed(block_number, program_inputs.clone(), err))?;
+        provider.insert_block(block.clone(), StorageLocation::Database).map_err(|err| {
+            program_inputs.push((block.clone(), Default::default()));
+            Error::block_failed(block_number, program_inputs.clone(), err)
+        })?;
 
         // Consensus checks before block execution
-        pre_execution_checks(chain_spec.clone(), &parent, block)
-            .map_err(|err| Error::block_failed(block_number, program_inputs.clone(), err))?;
+        pre_execution_checks(chain_spec.clone(), &parent, block).map_err(|err| {
+            program_inputs.push((block.clone(), Default::default()));
+            Error::block_failed(block_number, program_inputs.clone(), err)
+        })?;
 
         let mut witness_record = ExecutionWitnessRecord::default();
 
