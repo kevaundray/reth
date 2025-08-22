@@ -4,6 +4,7 @@ use crate::{
     models::{BlockchainTest, ForkSpec},
     Case, Error, Suite,
 };
+use alloy_primitives::Bytes;
 use alloy_rlp::{Decodable, Encodable};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use reth_chainspec::ChainSpec;
@@ -23,7 +24,7 @@ use reth_revm::{database::StateProviderDatabase, witness::ExecutionWitnessRecord
 use reth_stateless::{validation::stateless_validation, ExecutionWitness};
 use reth_trie::{HashedPostState, KeccakKeyHasher, StateRoot};
 use reth_trie_db::DatabaseStateRoot;
-use std::{collections::BTreeMap, fs, path::Path, sync::Arc};
+use std::{collections::BTreeMap, fs, iter, path::Path, sync::Arc};
 
 /// A handler for the blockchain test suite.
 #[derive(Debug)]
@@ -229,21 +230,21 @@ fn run_case(
         let block_number = (block_index + 1) as u64;
 
         // Insert the block into the database
-        provider.insert_block(block.clone(), StorageLocation::Database).map_err(|err| {
-            program_inputs.push((block.clone(), Default::default()));
-            Error::block_failed(block_number, program_inputs.clone(), err)
-        })?;
+        provider
+            .insert_block(block.clone(), StorageLocation::Database)
+            .map_err(|err| Error::block_failed(block_number, Default::default(), err))?;
+
+        // Add the parent to the program inputs, since it must be used for the pre-execution checks right after.
+        let mut serialized_header = Vec::new();
+        parent.header().encode(&mut serialized_header);
+        program_inputs.push((
+            block.clone(),
+            ExecutionWitness { headers: vec![serialized_header.into()], ..Default::default() },
+        ));
 
         // Consensus checks before block execution
-        pre_execution_checks(chain_spec.clone(), &parent, block).map_err(|err| {
-            let mut serialized_header = Vec::new();
-            parent.header().encode(&mut serialized_header);
-            program_inputs.push((
-                block.clone(),
-                ExecutionWitness { headers: vec![serialized_header.into()], ..Default::default() },
-            ));
-            Error::block_failed(block_number, program_inputs.clone(), err)
-        })?;
+        pre_execution_checks(chain_spec.clone(), &parent, block)
+            .map_err(|err| Error::block_failed(block_number, program_inputs.clone(), err))?;
 
         let mut witness_record = ExecutionWitnessRecord::default();
 
@@ -267,17 +268,16 @@ fn run_case(
         let ExecutionWitnessRecord { hashed_state, codes, keys, lowest_block_number } =
             witness_record;
         let state = state_provider.witness(Default::default(), hashed_state)?;
-        let mut exec_witness = ExecutionWitness { state, codes, keys, headers: Default::default() };
 
+        // Update the already existing execution witness with the new state
+        let execution_witness = &mut program_inputs.last_mut().unwrap().1;
         let smallest = lowest_block_number.unwrap_or_else(|| {
             // Return only the parent header, if there were no calls to the
             // BLOCKHASH opcode.
             block_number.saturating_sub(1)
         });
-
-        let range = smallest..block_number;
-
-        exec_witness.headers = provider
+        let range = smallest..block_number - 1; // The parent was already added before pre-execution checks.
+        let headers: Vec<Bytes> = provider
             .headers_range(range)?
             .into_iter()
             .map(|header| {
@@ -285,9 +285,12 @@ fn run_case(
                 header.encode(&mut serialized_header);
                 serialized_header.into()
             })
-            .collect();
-
-        program_inputs.push((block.clone(), exec_witness));
+            .chain(iter::once(execution_witness.headers.first().unwrap().clone()))
+            .collect::<Vec<_>>();
+        execution_witness.state = state;
+        execution_witness.codes = codes;
+        execution_witness.keys = keys;
+        execution_witness.headers = headers;
 
         // Compute and check the post state root
         let hashed_state =
