@@ -234,17 +234,11 @@ fn run_case(
             .insert_block(block.clone(), StorageLocation::Database)
             .map_err(|err| Error::block_failed(block_number, Default::default(), err))?;
 
-        // Add the parent to the program inputs, since it must be used for the pre-execution checks right after.
-        let mut serialized_header = Vec::new();
-        parent.header().encode(&mut serialized_header);
-        program_inputs.push((
-            block.clone(),
-            ExecutionWitness { headers: vec![serialized_header.into()], ..Default::default() },
-        ));
-
         // Consensus checks before block execution
-        pre_execution_checks(chain_spec.clone(), &parent, block)
-            .map_err(|err| Error::block_failed(block_number, program_inputs.clone(), err))?;
+        pre_execution_checks(chain_spec.clone(), &parent, block).map_err(|err| {
+            program_inputs.push((block.clone(), execution_witness_with_parent(&parent)));
+            Error::block_failed(block_number, program_inputs.clone(), err)
+        })?;
 
         let mut witness_record = ExecutionWitnessRecord::default();
 
@@ -268,16 +262,17 @@ fn run_case(
         let ExecutionWitnessRecord { hashed_state, codes, keys, lowest_block_number } =
             witness_record;
         let state = state_provider.witness(Default::default(), hashed_state)?;
+        let mut exec_witness = ExecutionWitness { state, codes, keys, headers: Default::default() };
 
-        // Update the already existing execution witness with the new state
-        let execution_witness = &mut program_inputs.last_mut().unwrap().1;
         let smallest = lowest_block_number.unwrap_or_else(|| {
             // Return only the parent header, if there were no calls to the
             // BLOCKHASH opcode.
             block_number.saturating_sub(1)
         });
-        let range = smallest..block_number - 1; // The parent was already added before pre-execution checks.
-        let headers: Vec<Bytes> = provider
+
+        let range = smallest..block_number;
+
+        exec_witness.headers = provider
             .headers_range(range)?
             .into_iter()
             .map(|header| {
@@ -285,12 +280,9 @@ fn run_case(
                 header.encode(&mut serialized_header);
                 serialized_header.into()
             })
-            .chain(iter::once(execution_witness.headers.first().unwrap().clone()))
-            .collect::<Vec<_>>();
-        execution_witness.state = state;
-        execution_witness.codes = codes;
-        execution_witness.keys = keys;
-        execution_witness.headers = headers;
+            .collect();
+
+        program_inputs.push((block.clone(), exec_witness));
 
         // Compute and check the post state root
         let hashed_state =
@@ -468,4 +460,10 @@ pub fn should_skip(path: &Path) -> bool {
 fn path_contains(path_str: &str, rhs: &[&str]) -> bool {
     let rhs = rhs.join(std::path::MAIN_SEPARATOR_STR);
     path_str.contains(&rhs)
+}
+
+fn execution_witness_with_parent(parent: &RecoveredBlock<Block>) -> ExecutionWitness {
+    let mut serialized_header = Vec::new();
+    parent.header().encode(&mut serialized_header);
+    ExecutionWitness { headers: vec![serialized_header.into()], ..Default::default() }
 }
