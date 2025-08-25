@@ -21,7 +21,9 @@ use reth_errors::ConsensusError;
 use reth_ethereum_consensus::{validate_block_post_execution, EthBeaconConsensus};
 use reth_ethereum_primitives::{Block, EthPrimitives};
 use reth_evm::{execute::Executor, ConfigureEvm};
-use reth_primitives_traits::{block::error::BlockRecoveryError, Block as _, RecoveredBlock};
+use reth_primitives_traits::{
+    block::error::BlockRecoveryError, Block as _, RecoveredBlock, SealedHeader,
+};
 use reth_trie_common::{HashedPostState, KeccakKeyHasher};
 
 /// Errors that can occur during stateless validation.
@@ -188,7 +190,11 @@ where
     ancestor_headers.sort_by_key(|header| header.number());
 
     // Validate block against pre-execution consensus rules
-    validate_block_consensus(chain_spec.clone(), &current_block)?;
+    let parent = match ancestor_headers.last() {
+        Some(prev_header) => SealedHeader::new_unhashed(prev_header.clone()),
+        None => return Err(StatelessValidationError::MissingAncestorHeader),
+    };
+    validate_block_consensus(chain_spec.clone(), &current_block, &parent)?;
 
     // Check that the ancestor headers form a contiguous chain and are not just random headers.
     let ancestor_hashes = compute_ancestor_hashes(&current_block, &ancestor_headers)?;
@@ -205,9 +211,7 @@ where
     };
 
     // First verify that the pre-state reads are correct
-    let (mut trie, bytecode) =
-        track_cycles!("verify_witness", T::new(&witness, pre_state_root)?);
-
+    let (mut trie, bytecode) = track_cycles!("verify_witness", T::new(&witness, pre_state_root)?);
 
     // Create an in-memory database that will use the reads to validate the block
     let db = WitnessDatabase::new(&trie, bytecode, ancestor_hashes);
@@ -264,6 +268,7 @@ where
 fn validate_block_consensus<ChainSpec>(
     chain_spec: Arc<ChainSpec>,
     block: &RecoveredBlock<Block>,
+    parent: &SealedHeader<Header>,
 ) -> Result<(), StatelessValidationError>
 where
     ChainSpec: Send + Sync + EthChainSpec<Header = Header> + EthereumHardforks + Debug,
@@ -271,6 +276,7 @@ where
     let consensus = EthBeaconConsensus::new(chain_spec);
 
     consensus.validate_header(block.sealed_header())?;
+    consensus.validate_header_against_parent(block.sealed_header(), parent)?;
 
     consensus.validate_block_pre_execution(block)?;
 
