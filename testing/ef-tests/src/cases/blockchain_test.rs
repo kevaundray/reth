@@ -23,26 +23,31 @@ use reth_revm::{database::StateProviderDatabase, witness::ExecutionWitnessRecord
 use reth_stateless::{validation::stateless_validation, ExecutionWitness};
 use reth_trie::{HashedPostState, KeccakKeyHasher, StateRoot};
 use reth_trie_db::DatabaseStateRoot;
-use std::{collections::BTreeMap, fs, path::Path, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 /// A handler for the blockchain test suite.
 #[derive(Debug)]
 pub struct BlockchainTests {
-    suite: String,
+    suite_path: PathBuf,
 }
 
 impl BlockchainTests {
-    /// Create a new handler for a subset of the blockchain test suite.
-    pub const fn new(suite: String) -> Self {
-        Self { suite }
+    /// Create a new suite for tests with blockchain tests format.
+    pub const fn new(suite_path: PathBuf) -> Self {
+        Self { suite_path }
     }
 }
 
 impl Suite for BlockchainTests {
     type Case = BlockchainTestCase;
 
-    fn suite_name(&self) -> String {
-        format!("BlockchainTests/{}", self.suite)
+    fn suite_path(&self) -> &Path {
+        &self.suite_path
     }
 }
 
@@ -58,12 +63,12 @@ impl BlockchainTestCase {
     const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
-            ForkSpec::ByzantiumToConstantinopleAt5 |
-                ForkSpec::Constantinople |
-                ForkSpec::ConstantinopleFix |
-                ForkSpec::MergeEOF |
-                ForkSpec::MergeMeterInitCode |
-                ForkSpec::MergePush0
+            ForkSpec::ByzantiumToConstantinopleAt5
+                | ForkSpec::Constantinople
+                | ForkSpec::ConstantinopleFix
+                | ForkSpec::MergeEOF
+                | ForkSpec::MergeMeterInitCode
+                | ForkSpec::MergePush0
         )
     }
 
@@ -157,7 +162,7 @@ impl Case for BlockchainTestCase {
     fn run(&self) -> Result<(), Error> {
         // If the test is marked for skipping, return a Skipped error immediately.
         if self.skip {
-            return Err(Error::Skipped)
+            return Err(Error::Skipped);
         }
 
         // Iterate through test cases, filtering by the network type to exclude specific forks.
@@ -285,7 +290,7 @@ pub fn run_case(
             return Err(Error::block_failed(
                 block_number,
                 Error::Assertion("state root mismatch".to_string()),
-            ))
+            ));
         }
 
         // Commit the post state/state diff to the database
@@ -308,31 +313,32 @@ pub fn run_case(
         parent = block.clone()
     }
 
-    // Validate the post-state for the test case.
-    //
-    // If we get here then it means that the post-state root checks
-    // made after we execute each block was successful.
-    //
-    // If an error occurs here, then it is:
-    // - Either an issue with the test setup
-    // - Possibly an error in the test case where the post-state root in the last block does not
-    //   match the post-state values.
-    match case.post_state.as_ref() {
+    match &case.post_state {
         Some(expected_post_state) => {
-            for (&address, account) in expected_post_state {
-                account.assert_db(address, provider.tx_ref())?;
+            // Validate the post-state for the test case.
+            //
+            // If we get here then it means that the post-state root checks
+            // made after we execute each block was successful.
+            //
+            // If an error occurs here, then it is:
+            // - Either an issue with the test setup
+            // - Possibly an error in the test case where the post-state root in the last block does
+            //   not match the post-state values.
+            for (address, account) in expected_post_state {
+                account.assert_db(*address, provider.tx_ref())?;
             }
         }
         None => {
-            // Do nothing
+            // Some test may not have post-state (e.g., state-heavy benchmark tests).
+            // In this case, we can skip the post-state validation.
         }
-    };
+    }
 
     // Now validate using the stateless client if everything else passes
     for (block, execution_witness) in &program_inputs {
         stateless_validation(
-            block.clone().into_block(),
-            execution_witness.clone(),
+            block,
+            execution_witness,
             chain_spec.clone(),
             EthEvmConfig::new(chain_spec.clone()),
         )
@@ -404,7 +410,7 @@ pub fn should_skip(path: &Path) -> bool {
         | "typeTwoBerlin.json"
 
         // Test checks if nonce overflows. We are handling this correctly but we are not parsing
-        // exception in testsuite There are more nonce overflow tests that are in internal
+        // exception in testsuite There are more nonce overflow tests that are internal
         // call/create, and those tests are passing and are enabled.
         | "CreateTransactionHighNonce.json"
 
