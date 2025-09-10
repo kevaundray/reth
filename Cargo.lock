@@ -10377,7 +10377,7 @@ dependencies = [
  "reth-trie-sparse",
  "serde",
  "serde_with",
- "thiserror 2.0.12",
+ "thiserror 2.0.16",
  "tracing",
 ]
 
