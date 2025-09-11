@@ -46,7 +46,7 @@ pub enum StatelessValidationError {
     },
 
     /// Error during stateless block execution.
-    #[error("stateless block execution failed")]
+    #[error("stateless block execution failed: {0}")]
     StatelessExecutionFailed(String),
 
     /// Error during consensus validation of the block.
