@@ -65,12 +65,12 @@ impl BlockchainTestCase {
     const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
-            ForkSpec::ByzantiumToConstantinopleAt5
-                | ForkSpec::Constantinople
-                | ForkSpec::ConstantinopleFix
-                | ForkSpec::MergeEOF
-                | ForkSpec::MergeMeterInitCode
-                | ForkSpec::MergePush0
+            ForkSpec::ByzantiumToConstantinopleAt5 |
+                ForkSpec::Constantinople |
+                ForkSpec::ConstantinopleFix |
+                ForkSpec::MergeEOF |
+                ForkSpec::MergeMeterInitCode |
+                ForkSpec::MergePush0
         )
     }
 
@@ -183,7 +183,8 @@ impl Case for BlockchainTestCase {
     }
 }
 
-/// Executes a single `BlockchainTest` returning an error as soon as any block has a consensus validation failure.
+/// Executes a single `BlockchainTest` returning an error as soon as any block has a consensus
+/// validation failure.
 ///
 /// A `BlockchainTest` represents a self-contained scenario:
 /// - It initializes a fresh blockchain state.
@@ -192,9 +193,10 @@ impl Case for BlockchainTestCase {
 ///   outcome.
 ///
 /// Returns:
-/// - `Ok(_)` if all blocks execute successfully, returning recovered blocks and full block execution witness.
-/// - `Err(Error)` if any block fails to execute correctly, returning a partial block execution witness if the
-///   error is of variant `BlockProcessingFailed`.
+/// - `Ok(_)` if all blocks execute successfully, returning recovered blocks and full block
+///   execution witness.
+/// - `Err(Error)` if any block fails to execute correctly, returning a partial block execution
+///   witness if the error is of variant `BlockProcessingFailed`.
 fn run_case(
     case: &BlockchainTest,
 ) -> Result<Vec<(RecoveredBlock<Block>, ExecutionWitness)>, Error> {
