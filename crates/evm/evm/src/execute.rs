@@ -107,8 +107,8 @@ pub trait Executor<DB: Database>: Sized {
         Ok(BlockExecutionOutput { state: state.take_bundle(), result })
     }
 
-    /// Executes the EVM with the given input and accepts a state closure that is always invoked with
-    /// the EVM state after execution, even after failure.
+    /// Executes the EVM with the given input and accepts a state closure that is always invoked
+    /// with the EVM state after execution, even after failure.
     fn execute_with_state_closure_always<F>(
         mut self,
         block: &RecoveredBlock<<Self::Primitives as NodePrimitives>::Block>,
