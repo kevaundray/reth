@@ -4,7 +4,6 @@ use crate::{
     models::{BlockchainTest, ForkSpec},
     Case, Error, Suite,
 };
-use alloy_primitives::Bytes;
 use alloy_rlp::{Decodable, Encodable};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use reth_chainspec::ChainSpec;
@@ -55,7 +54,7 @@ impl Suite for BlockchainTests {
 /// An Ethereum blockchain test.
 #[derive(Debug, PartialEq, Eq)]
 pub struct BlockchainTestCase {
-    /// The individual tests within this test case.
+    /// The tests within this test case.
     pub tests: BTreeMap<String, BlockchainTest>,
     /// Whether to skip this test case.
     pub skip: bool,
@@ -66,12 +65,12 @@ impl BlockchainTestCase {
     const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
-            ForkSpec::ByzantiumToConstantinopleAt5 |
-                ForkSpec::Constantinople |
-                ForkSpec::ConstantinopleFix |
-                ForkSpec::MergeEOF |
-                ForkSpec::MergeMeterInitCode |
-                ForkSpec::MergePush0
+            ForkSpec::ByzantiumToConstantinopleAt5
+                | ForkSpec::Constantinople
+                | ForkSpec::ConstantinopleFix
+                | ForkSpec::MergeEOF
+                | ForkSpec::MergeMeterInitCode
+                | ForkSpec::MergePush0
         )
     }
 
@@ -389,6 +388,7 @@ fn decode_blocks(
 
         blocks.push(recovered_block);
     }
+
     Ok(blocks)
 }
 
