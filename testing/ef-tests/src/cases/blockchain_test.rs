@@ -18,7 +18,7 @@ use reth_primitives_traits::{RecoveredBlock, SealedBlock};
 use reth_provider::{
     test_utils::create_test_provider_factory_with_chain_spec, BlockWriter, DatabaseProviderFactory,
     ExecutionOutcome, HeaderProvider, HistoryWriter, OriginalValuesKnown, StateProofProvider,
-    StateWriter, StorageLocation,
+    StateWriter, StaticFileProviderFactory, StaticFileSegment, StaticFileWriter,
 };
 use reth_revm::{database::StateProviderDatabase, witness::ExecutionWitnessRecord, State};
 use reth_stateless::{validation::stateless_validation, ExecutionWitness};
@@ -58,6 +58,8 @@ pub struct BlockchainTestCase {
     /// The individual tests within this test case.
     pub tests: BTreeMap<String, BlockchainTest>,
     skip: bool,
+    /// Whether to skip this test case.
+    pub skip: bool,
 }
 
 impl BlockchainTestCase {
@@ -65,12 +67,12 @@ impl BlockchainTestCase {
     const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
-            ForkSpec::ByzantiumToConstantinopleAt5 |
-                ForkSpec::Constantinople |
-                ForkSpec::ConstantinopleFix |
-                ForkSpec::MergeEOF |
-                ForkSpec::MergeMeterInitCode |
-                ForkSpec::MergePush0
+            ForkSpec::ByzantiumToConstantinopleAt5
+                | ForkSpec::Constantinople
+                | ForkSpec::ConstantinopleFix
+                | ForkSpec::MergeEOF
+                | ForkSpec::MergeMeterInitCode
+                | ForkSpec::MergePush0
         )
     }
 
@@ -98,7 +100,8 @@ impl BlockchainTestCase {
     }
 
     /// Execute a single `BlockchainTest`, validating the outcome against the
-    /// expectations encoded in the JSON file.
+    /// expectations encoded in the JSON file. Returns the list of executed blocks
+    /// with their execution witnesses.
     pub fn run_single_case(
         name: &str,
         case: &BlockchainTest,
@@ -143,7 +146,7 @@ impl BlockchainTestCase {
             // Since it is unexpected, we treat it as a test failure.
             //
             // One reason for this happening is when one forgets to wrap the error from `run_case`
-            // so that it produces a `Error::BlockProcessingFailed`
+            // so that it produces an `Error::BlockProcessingFailed`
             Err(other) => Err(other),
         }
     }
@@ -214,7 +217,14 @@ fn run_case(
     .unwrap();
 
     provider
-        .insert_block(genesis_block.clone(), StorageLocation::Database)
+        .insert_block(genesis_block.clone())
+        .map_err(|err| Error::block_failed(0, Default::default(), err))?;
+
+    // Increment block number for receipts static file
+    provider
+        .static_file_provider()
+        .latest_writer(StaticFileSegment::Receipts)
+        .and_then(|mut writer| writer.increment_block(0))
         .map_err(|err| Error::block_failed(0, Default::default(), err))?;
 
     let genesis_state = case.pre.clone().into_genesis_state();
@@ -238,7 +248,12 @@ fn run_case(
 
         // Insert the block into the database
         provider
-            .insert_block(block.clone(), StorageLocation::Database)
+            .insert_block(block.clone())
+            .map_err(|err| Error::block_failed(block_number, Default::default(), err))?;
+        // Commit static files, so we can query the headers for stateless execution below
+        provider
+            .static_file_provider()
+            .commit()
             .map_err(|err| Error::block_failed(block_number, Default::default(), err))?;
 
         // Consensus checks before block execution
@@ -307,11 +322,7 @@ fn run_case(
 
         // Commit the post state/state diff to the database
         provider
-            .write_state(
-                &ExecutionOutcome::single(block.number, output),
-                OriginalValuesKnown::Yes,
-                StorageLocation::Database,
-            )
+            .write_state(&ExecutionOutcome::single(block.number, output), OriginalValuesKnown::Yes)
             .map_err(|err| Error::block_failed(block_number, program_inputs.clone(), err))?;
 
         provider
@@ -341,7 +352,7 @@ fn run_case(
             }
         }
         None => {
-            // Some test may not have post-state (e.g., state-heavy benchmark tests).
+            // Some tests may not have post-state (e.g., state-heavy benchmark tests).
             // In this case, we can skip the post-state validation.
         }
     }
@@ -423,7 +434,7 @@ pub fn should_skip(path: &Path) -> bool {
         | "typeTwoBerlin.json"
 
         // Test checks if nonce overflows. We are handling this correctly but we are not parsing
-        // exception in testsuite There are more nonce overflow tests that are internal
+        // exception in testsuite. There are more nonce overflow tests that are internal
         // call/create, and those tests are passing and are enabled.
         | "CreateTransactionHighNonce.json"
 

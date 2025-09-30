@@ -68,7 +68,7 @@ where
         let _ = install_prometheus_recorder();
 
         let components = |spec: Arc<OpChainSpec>| {
-            (OpExecutorProvider::optimism(spec.clone()), OpBeaconConsensus::new(spec))
+            (OpExecutorProvider::optimism(spec.clone()), Arc::new(OpBeaconConsensus::new(spec)))
         };
 
         match self.cli.command {
@@ -102,9 +102,6 @@ where
             }
             Commands::P2P(command) => runner.run_until_ctrl_c(command.execute::<OpNode>()),
             Commands::Config(command) => runner.run_until_ctrl_c(command.execute()),
-            Commands::Recover(command) => {
-                runner.run_command_until_exit(|ctx| command.execute::<OpNode>(ctx))
-            }
             Commands::Prune(command) => runner.run_until_ctrl_c(command.execute::<OpNode>()),
             #[cfg(feature = "dev")]
             Commands::TestVectors(command) => runner.run_until_ctrl_c(command.execute()),
