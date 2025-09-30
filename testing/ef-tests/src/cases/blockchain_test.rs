@@ -57,7 +57,6 @@ impl Suite for BlockchainTests {
 pub struct BlockchainTestCase {
     /// The individual tests within this test case.
     pub tests: BTreeMap<String, BlockchainTest>,
-    skip: bool,
     /// Whether to skip this test case.
     pub skip: bool,
 }
