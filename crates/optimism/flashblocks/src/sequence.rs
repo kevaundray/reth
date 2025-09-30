@@ -1,9 +1,9 @@
-use crate::{ExecutionPayloadBaseV1, FlashBlock};
+use crate::{ExecutionPayloadBaseV1, FlashBlock, FlashBlockCompleteSequenceRx};
 use alloy_eips::eip2718::WithEncoded;
 use core::mem;
 use eyre::{bail, OptionExt};
 use reth_primitives_traits::{Recovered, SignedTransaction};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, ops::Deref};
 use tokio::sync::broadcast;
 use tracing::{debug, trace, warn};
 
@@ -34,9 +34,7 @@ where
     }
 
     /// Gets a subscriber to the flashblock sequences produced.
-    pub(crate) fn subscribe_block_sequence(
-        &self,
-    ) -> broadcast::Receiver<FlashBlockCompleteSequence> {
+    pub(crate) fn subscribe_block_sequence(&self) -> FlashBlockCompleteSequenceRx {
         self.block_broadcaster.subscribe()
     }
 
@@ -123,6 +121,11 @@ where
     pub(crate) fn count(&self) -> usize {
         self.inner.len()
     }
+
+    /// Returns the reference to the last flashblock.
+    pub(crate) fn last_flashblock(&self) -> Option<&FlashBlock> {
+        self.inner.last_key_value().map(|(_, b)| &b.block)
+    }
 }
 
 /// A complete sequence of flashblocks, often corresponding to a full block.
@@ -167,6 +170,19 @@ impl FlashBlockCompleteSequence {
     /// Returns the number of flashblocks in the sequence.
     pub const fn count(&self) -> usize {
         self.0.len()
+    }
+
+    /// Returns the last flashblock in the sequence.
+    pub fn last(&self) -> &FlashBlock {
+        self.0.last().unwrap()
+    }
+}
+
+impl Deref for FlashBlockCompleteSequence {
+    type Target = Vec<FlashBlock>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
