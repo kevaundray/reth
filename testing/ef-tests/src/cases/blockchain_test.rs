@@ -27,8 +27,9 @@ use reth_revm::{
     State,
 };
 use reth_stateless::{
-    trie::StatelessSparseTrie, validation::stateless_validation_with_trie, ExecutionWitness,
-    UncompressedPublicKey,
+    trie::StatelessSparseTrie,
+    validation::{stateless_validation_with_cache, stateless_validation_with_trie},
+    ExecutionWitness, UncompressedPublicKey,
 };
 use reth_trie::{HashedPostState, KeccakKeyHasher, StateRoot};
 use reth_trie_db::DatabaseStateRoot;
@@ -252,6 +253,7 @@ fn run_case(
     let executor_provider = EthEvmConfig::ethereum(chain_spec.clone());
     let mut parent = genesis_block;
     let mut program_inputs = Vec::new();
+    let mut caches = Vec::new();
 
     for (block_index, block) in blocks.iter().enumerate() {
         println!("Processing block {}", block.number);
@@ -360,6 +362,7 @@ fn run_case(
         println!("Cache: {cache:#?}");
 
         program_inputs.push((block.clone(), exec_witness));
+        caches.push(cache);
 
         // Compute and check the post state root
         let hashed_state =
@@ -413,21 +416,40 @@ fn run_case(
     }
 
     // Now validate using the stateless client if everything else passes
-    for (recovered_block, execution_witness) in &program_inputs {
+    for ((recovered_block, execution_witness), cache) in program_inputs.iter().zip(caches) {
         let block = recovered_block.clone().into_block();
 
         // Recover the actual public keys from the transaction signatures
         let public_keys = recover_signers(block.body().transactions())
             .expect("Failed to recover public keys from transaction signatures");
 
-        stateless_validation_with_trie::<StatelessSparseTrie, _, _>(
-            block,
-            public_keys,
+        let (_, trie_post_state) = stateless_validation_with_trie::<StatelessSparseTrie, _, _>(
+            block.clone(),
+            public_keys.clone(),
             execution_witness.clone(),
             chain_spec.clone(),
             EthEvmConfig::new(chain_spec.clone()),
         )
         .expect("stateless validation failed");
+        println!("Trie post state: {trie_post_state:#?}");
+
+        let (_, flatdb_post_state) = stateless_validation_with_cache::<StatelessSparseTrie, _, _>(
+            block,
+            public_keys,
+            execution_witness.clone(),
+            chain_spec.clone(),
+            EthEvmConfig::new(chain_spec.clone()),
+            cache,
+        )
+        .expect("stateless validation with flatdb failed");
+
+        println!("Flatdb post state: {flatdb_post_state:#?}");
+
+        if trie_post_state != flatdb_post_state {
+            return Err(Error::Assertion(
+                "Post state mismatch between trie and flatdb implementations".to_string(),
+            ));
+        }
     }
 
     Ok(program_inputs)

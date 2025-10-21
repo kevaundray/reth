@@ -21,6 +21,7 @@ use reth_ethereum_consensus::{validate_block_post_execution, EthBeaconConsensus}
 use reth_ethereum_primitives::{Block, EthPrimitives};
 use reth_evm::{execute::Executor, ConfigureEvm};
 use reth_primitives_traits::{RecoveredBlock, SealedHeader};
+use reth_revm::db::{Cache, InMemoryDB};
 use reth_trie_common::{HashedPostState, KeccakKeyHasher};
 
 /// BLOCKHASH ancestor lookup window limit per EVM (number of most recent blocks accessible).
@@ -150,13 +151,14 @@ where
     ChainSpec: Send + Sync + EthChainSpec<Header = Header> + EthereumHardforks + Debug,
     E: ConfigureEvm<Primitives = EthPrimitives> + Clone + 'static,
 {
-    stateless_validation_with_trie::<StatelessSparseTrie, ChainSpec, E>(
+    let (hash, _) = stateless_validation_with_trie::<StatelessSparseTrie, ChainSpec, E>(
         current_block,
         public_keys,
         witness,
         chain_spec,
         evm_config,
-    )
+    )?;
+    Ok(hash)
 }
 
 /// Performs stateless validation of a block using a custom `StatelessTrie` implementation.
@@ -171,7 +173,7 @@ pub fn stateless_validation_with_trie<T, ChainSpec, E>(
     witness: ExecutionWitness,
     chain_spec: Arc<ChainSpec>,
     evm_config: E,
-) -> Result<B256, StatelessValidationError>
+) -> Result<(B256, HashedPostState), StatelessValidationError>
 where
     T: StatelessTrie,
     ChainSpec: Send + Sync + EthChainSpec<Header = Header> + EthereumHardforks + Debug,
@@ -250,7 +252,102 @@ where
     });
 
     // Return block hash
-    Ok(current_block.hash_slow())
+    Ok((
+        current_block.hash_slow(),
+        HashedPostState::from_bundle_state::<KeccakKeyHasher>(&output.state.state),
+    ))
+}
+
+pub fn stateless_validation_with_cache<T, ChainSpec, E>(
+    current_block: Block,
+    public_keys: Vec<UncompressedPublicKey>,
+    witness: ExecutionWitness,
+    chain_spec: Arc<ChainSpec>,
+    evm_config: E,
+    cache: Cache,
+) -> Result<(B256, HashedPostState), StatelessValidationError>
+where
+    T: StatelessTrie,
+    ChainSpec: Send + Sync + EthChainSpec<Header = Header> + EthereumHardforks + Debug,
+    E: ConfigureEvm<Primitives = EthPrimitives> + Clone + 'static,
+{
+    let current_block = recover_block_with_public_keys(current_block, public_keys, &*chain_spec)?;
+
+    let mut ancestor_headers: Vec<_> = witness
+        .headers
+        .iter()
+        .map(|bytes| {
+            let hash = keccak256(bytes);
+            alloy_rlp::decode_exact::<Header>(bytes)
+                .map(|h| SealedHeader::new(h, hash))
+                .map_err(|_| StatelessValidationError::HeaderDeserializationFailed)
+        })
+        .collect::<Result<_, _>>()?;
+    // Sort the headers by their block number to ensure that they are in
+    // ascending order.
+    ancestor_headers.sort_by_key(|header| header.number());
+
+    // Enforce BLOCKHASH ancestor headers limit (256 most recent blocks)
+    let count = ancestor_headers.len();
+    if count > BLOCKHASH_ANCESTOR_LIMIT {
+        return Err(StatelessValidationError::AncestorHeaderLimitExceeded {
+            count,
+            limit: BLOCKHASH_ANCESTOR_LIMIT,
+        });
+    }
+
+    // Check that the ancestor headers form a contiguous chain and are not just random headers.
+    let ancestor_hashes = compute_ancestor_hashes(&current_block, &ancestor_headers)?;
+
+    // There should be at least one ancestor header.
+    // The edge case here would be the genesis block, but we do not create proofs for the genesis
+    // block.
+    let parent = match ancestor_headers.last() {
+        Some(prev_header) => prev_header,
+        None => return Err(StatelessValidationError::MissingAncestorHeader),
+    };
+
+    // Validate block against pre-execution consensus rules
+    validate_block_consensus(chain_spec.clone(), &current_block, parent)?;
+
+    // First verify that the pre-state reads are correct
+    // let (mut trie, bytecode) =
+    //     track_cycles!("verify_witness", T::new(&witness, parent.state_root)?);
+
+    // // Create an in-memory database that will use the reads to validate the block
+    // let db = WitnessDatabase::new(&trie, bytecode, ancestor_hashes);
+    let db = InMemoryDB { cache, db: Default::default() };
+
+    // Execute the block
+    let executor = evm_config.executor(db);
+    let output = track_cycles!(
+        "block_execution",
+        executor
+            .execute(&current_block)
+            .map_err(|e| StatelessValidationError::StatelessExecutionFailed(e.to_string()))?
+    );
+
+    // Post validation checks
+    validate_block_post_execution(&current_block, &chain_spec, &output.receipts, &output.requests)
+        .map_err(StatelessValidationError::ConsensusValidationFailed)?;
+
+    let hashed_state = HashedPostState::from_bundle_state::<KeccakKeyHasher>(&output.state.state);
+
+    // // Compute and check the post state root
+    // track_cycles!("post_state_compute", {
+    //     let hashed_state =
+    //         HashedPostState::from_bundle_state::<KeccakKeyHasher>(&output.state.state);
+    //     let state_root = trie.calculate_state_root(hashed_state)?;
+    //     if state_root != current_block.state_root {
+    //         return Err(StatelessValidationError::PostStateRootMismatch {
+    //             got: state_root,
+    //             expected: current_block.state_root,
+    //         });
+    //     }
+    // });
+
+    // Return block hash
+    Ok((current_block.hash_slow(), hashed_state))
 }
 
 /// Performs consensus validation checks on a block without execution or state validation.
