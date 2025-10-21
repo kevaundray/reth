@@ -1,5 +1,5 @@
 //! Command-line interface for running tests.
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 
 use clap::Parser;
 use ef_tests::{cases::blockchain_test::BlockchainTests, Suite};
@@ -12,6 +12,8 @@ pub struct TestRunnerCommand {
 }
 
 fn main() {
-    let cmd = TestRunnerCommand::parse();
-    BlockchainTests::new(cmd.suite_path.join("blockchain_tests")).run();
+    // let mut cmd = TestRunnerCommand::parse();
+    let suite_path =
+        PathBuf::from_str("/data/code-data/kev-reth/testing/ef-tests/reth-debug").unwrap();
+    BlockchainTests::new(suite_path.join("blockchain_tests")).run();
 }

@@ -4,6 +4,7 @@ use crate::{
     models::{BlockchainTest, ForkSpec},
     Case, Error, Suite,
 };
+use alloy_primitives::{keccak256, FixedBytes, B256, U256};
 use alloy_rlp::{Decodable, Encodable};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use reth_chainspec::ChainSpec;
@@ -19,13 +20,22 @@ use reth_provider::{
     ExecutionOutcome, HeaderProvider, HistoryWriter, OriginalValuesKnown, StateProofProvider,
     StateWriter, StaticFileProviderFactory, StaticFileSegment, StaticFileWriter,
 };
-use reth_revm::{database::StateProviderDatabase, witness::ExecutionWitnessRecord, State};
+use reth_revm::{
+    database::StateProviderDatabase,
+    db::{Cache, DbAccount},
+    witness::{self, ExecutionWitnessRecord},
+    State,
+};
 use reth_stateless::{
     trie::StatelessSparseTrie, validation::stateless_validation_with_trie, ExecutionWitness,
     UncompressedPublicKey,
 };
 use reth_trie::{HashedPostState, KeccakKeyHasher, StateRoot};
 use reth_trie_db::DatabaseStateRoot;
+use revm::{
+    primitives::HashMap,
+    state::{AccountInfo, Bytecode},
+};
 use std::{
     collections::BTreeMap,
     fs,
@@ -68,12 +78,12 @@ impl BlockchainTestCase {
     const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
-            ForkSpec::ByzantiumToConstantinopleAt5 |
-                ForkSpec::Constantinople |
-                ForkSpec::ConstantinopleFix |
-                ForkSpec::MergeEOF |
-                ForkSpec::MergeMeterInitCode |
-                ForkSpec::MergePush0
+            ForkSpec::ByzantiumToConstantinopleAt5
+                | ForkSpec::Constantinople
+                | ForkSpec::ConstantinopleFix
+                | ForkSpec::MergeEOF
+                | ForkSpec::MergeMeterInitCode
+                | ForkSpec::MergePush0
         )
     }
 
@@ -244,6 +254,7 @@ fn run_case(
     let mut program_inputs = Vec::new();
 
     for (block_index, block) in blocks.iter().enumerate() {
+        println!("Processing block {}", block.number);
         // Note: same as the comment on `decode_blocks` as to why we cannot use block.number
         let block_number = (block_index + 1) as u64;
 
@@ -270,9 +281,43 @@ fn run_case(
         let state_db = StateProviderDatabase(&state_provider);
         let executor = executor_provider.batch_executor(state_db);
 
+        let mut cache = Cache::default();
         let output = executor
             .execute_with_state_closure_always(&(*block).clone(), |statedb: &State<_>| {
                 witness_record.record_executed_state(statedb);
+
+                cache.contracts = statedb
+                    .cache
+                    .contracts
+                    .values()
+                    .map(|code| code.original_bytes())
+                    .chain(
+                        statedb.bundle_state.contracts.values().map(|code| code.original_bytes()),
+                    )
+                    .map(|code_bytes| (keccak256(&code_bytes), Bytecode::new_legacy(code_bytes)))
+                    .collect();
+
+                for (address, account) in &statedb.cache.accounts {
+                    let mut db_account = DbAccount {
+                        info: state_provider
+                            .basic_account(address)
+                            .expect("Get prestate account")
+                            .unwrap_or_default()
+                            .into(),
+                        account_state: Default::default(),
+                        storage: Default::default(),
+                    };
+                    if let Some(account) = &account.account {
+                        for slot in account.storage.keys() {
+                            let val = state_provider
+                                .storage(*address, (*slot).into())
+                                .expect("Get prestate storage value")
+                                .unwrap_or_default();
+                            db_account.storage.insert(*slot, val);
+                        }
+                    }
+                    cache.accounts.insert(*address, db_account);
+                }
             })
             .map_err(|err| Error::block_failed(block_number, program_inputs.clone(), err))?;
 
@@ -296,7 +341,7 @@ fn run_case(
         let range = smallest..block_number;
 
         exec_witness.headers = provider
-            .headers_range(range)?
+            .headers_range(range.clone())?
             .into_iter()
             .map(|header| {
                 let mut serialized_header = Vec::new();
@@ -304,6 +349,15 @@ fn run_case(
                 serialized_header.into()
             })
             .collect();
+
+        cache.block_hashes = exec_witness
+            .headers
+            .iter()
+            .zip(range)
+            .map(|(bytes, num)| (U256::from(num), keccak256(bytes)))
+            .collect();
+
+        println!("Cache: {cache:#?}");
 
         program_inputs.push((block.clone(), exec_witness));
 
