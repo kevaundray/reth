@@ -4,12 +4,13 @@ use crate::{
     models::{BlockchainTest, ForkSpec},
     Case, Error, Suite,
 };
+use alloy_consensus::Header;
 use reth_db_api::{
     cursor::{DbCursorRO, DbDupCursorRO},
     transaction::DbTx,
 };
 
-use alloy_primitives::{hex::FromHex, keccak256, Address, FixedBytes, B256, U256};
+use alloy_primitives::{keccak256, U256};
 use alloy_rlp::{Decodable, Encodable};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use reth_chainspec::ChainSpec;
@@ -24,12 +25,12 @@ use reth_primitives_traits::{Block as BlockTrait, RecoveredBlock, SealedBlock};
 use reth_provider::{
     test_utils::create_test_provider_factory_with_chain_spec, BlockWriter, DatabaseProviderFactory,
     ExecutionOutcome, HeaderProvider, HistoryWriter, OriginalValuesKnown, StateProofProvider,
-    StateWriter, StaticFileProviderFactory, StaticFileSegment, StaticFileWriter, StorageReader,
+    StateWriter, StaticFileProviderFactory, StaticFileSegment, StaticFileWriter,
 };
 use reth_revm::{
     database::{EvmStateProvider, StateProviderDatabase},
     db::{AccountStatus, Cache, DbAccount},
-    witness::{self, ExecutionWitnessRecord},
+    witness::ExecutionWitnessRecord,
     State,
 };
 use reth_stateless::{
@@ -39,22 +40,11 @@ use reth_stateless::{
         stateless_validation_flatdb_state_check, stateless_validation_with_flatdb,
         stateless_validation_with_trie,
     },
-    witness_db::WitnessDatabase,
     ExecutionWitness, UncompressedPublicKey,
 };
-use reth_trie::{
-    trie_cursor::{TrieCursor, TrieCursorFactory},
-    HashedPostState, KeccakKeyHasher, StateRoot,
-};
-use reth_trie_db::{
-    DatabaseHashedCursorFactory, DatabaseHashedStorage, DatabaseStateRoot,
-    DatabaseStorageTrieCursor, DatabaseTrieCursorFactory,
-};
-use revm::{
-    primitives::HashMap,
-    state::{AccountInfo, Bytecode},
-    Database,
-};
+use reth_trie::{HashedPostState, KeccakKeyHasher, StateRoot};
+use reth_trie_db::DatabaseStateRoot;
+use revm::state::Bytecode;
 use std::{
     collections::BTreeMap,
     fs,
@@ -97,12 +87,12 @@ impl BlockchainTestCase {
     const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
-            ForkSpec::ByzantiumToConstantinopleAt5 |
-                ForkSpec::Constantinople |
-                ForkSpec::ConstantinopleFix |
-                ForkSpec::MergeEOF |
-                ForkSpec::MergeMeterInitCode |
-                ForkSpec::MergePush0
+            ForkSpec::ByzantiumToConstantinopleAt5
+                | ForkSpec::Constantinople
+                | ForkSpec::ConstantinopleFix
+                | ForkSpec::MergeEOF
+                | ForkSpec::MergeMeterInitCode
+                | ForkSpec::MergePush0
         )
     }
 
@@ -477,9 +467,11 @@ fn run_case(
         )
         .expect("stateless validation failed");
 
-        let flatdb_witness =
-            FlatExecutionWitness { cache, headers: execution_witness.headers.clone() }; // TODO: clone
-                                                                                        // Validate stateless execution using a flatdb for the storage access.
+        let parent_header =
+            alloy_rlp::decode_exact::<Header>(execution_witness.headers.last().unwrap().clone())
+                .unwrap();
+        let flatdb_witness = FlatExecutionWitness { state: cache, parent_header }; // TODO: clone
+                                                                                   // Validate stateless execution using a flatdb for the storage access.
         let (_, flatdb_post_state) = stateless_validation_with_flatdb::<_, _>(
             block.clone(),
             public_keys.clone(),
@@ -500,12 +492,10 @@ fn run_case(
         // Validate that the flatdb used as pre-state can be proven using a sparse trie (i.e., in a
         // different proof). Also checks that the post-state diff generated during flatdb
         // execution results in the expected post-state root.
-        stateless_validation_flatdb_state_check::<StatelessSparseTrie, _>(
+        stateless_validation_flatdb_state_check::<StatelessSparseTrie>(
             block,
-            public_keys,
             execution_witness.clone(),
-            chain_spec.clone(),
-            flatdb_witness,
+            flatdb_witness.state,
             flatdb_post_state,
         )
         .unwrap();
