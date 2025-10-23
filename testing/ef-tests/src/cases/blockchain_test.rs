@@ -498,7 +498,7 @@ fn run_case(
             flatdb_witness.state,
             flatdb_post_state,
         )
-        .unwrap();
+        .expect("stateless flatdb state check failed");
     }
 
     Ok(program_inputs)
