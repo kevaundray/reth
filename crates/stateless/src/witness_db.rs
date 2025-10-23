@@ -17,7 +17,7 @@ use reth_revm::{bytecode::Bytecode, state::AccountInfo, Database};
 /// This is designed for stateless execution scenarios where direct access to a full node's
 /// database is not available or desired.
 #[derive(Debug)]
-pub struct WitnessDatabase<'a, T>
+pub(crate) struct WitnessDatabase<'a, T>
 where
     T: StatelessTrie,
 {
@@ -55,8 +55,7 @@ where
     ///    to 256 including the current block number). It assumes these hashes correspond to a
     ///    contiguous chain of blocks. The caller is responsible for verifying the contiguity and
     ///    the block limit.
-    pub const fn new(
-        // TODO: revert since was debugging
+    pub(crate) const fn new(
         trie: &'a T,
         bytecode: B256Map<Bytecode>,
         ancestor_hashes: BTreeMap<u64, B256>,

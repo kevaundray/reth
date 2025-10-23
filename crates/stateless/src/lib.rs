@@ -53,7 +53,7 @@ pub use alloy_genesis::Genesis;
 
 /// Implementation of stateless validation
 pub mod validation;
-pub mod witness_db; // TODO: revert since it is temporal for ebugging
+pub(crate) mod witness_db; // TODO: revert since it is temporal for ebugging
 
 #[doc(inline)]
 pub use alloy_rpc_types_debug::ExecutionWitness;
