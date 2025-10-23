@@ -15,6 +15,6 @@ fn main() {
     // let mut cmd = TestRunnerCommand::parse();
     let suite_path =
         // PathBuf::from_str("/data/code-data/kev-reth/testing/ef-tests/reth-debug").unwrap();
-        PathBuf::from_str("/data/code-data/kev-reth/testing/ef-tests/execution-spec-tests2").unwrap();
+        PathBuf::from_str("/data/code-data/kev-reth/testing/ef-tests/execution-spec-tests").unwrap();
     BlockchainTests::new(suite_path.join("blockchain_tests")).run();
 }

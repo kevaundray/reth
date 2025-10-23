@@ -4,11 +4,17 @@ use crate::{
     models::{BlockchainTest, ForkSpec},
     Case, Error, Suite,
 };
+use reth_db_api::{
+    cursor::{DbCursorRO, DbDupCursorRO},
+    transaction::DbTx,
+};
+
 use alloy_primitives::{hex::FromHex, keccak256, Address, FixedBytes, B256, U256};
 use alloy_rlp::{Decodable, Encodable};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use reth_chainspec::ChainSpec;
 use reth_consensus::{Consensus, HeaderValidator};
+use reth_db::tables;
 use reth_db_common::init::{insert_genesis_hashes, insert_genesis_history, insert_genesis_state};
 use reth_ethereum_consensus::{validate_block_post_execution, EthBeaconConsensus};
 use reth_ethereum_primitives::{Block, TransactionSigned};
@@ -18,11 +24,11 @@ use reth_primitives_traits::{Block as BlockTrait, RecoveredBlock, SealedBlock};
 use reth_provider::{
     test_utils::create_test_provider_factory_with_chain_spec, BlockWriter, DatabaseProviderFactory,
     ExecutionOutcome, HeaderProvider, HistoryWriter, OriginalValuesKnown, StateProofProvider,
-    StateWriter, StaticFileProviderFactory, StaticFileSegment, StaticFileWriter,
+    StateWriter, StaticFileProviderFactory, StaticFileSegment, StaticFileWriter, StorageReader,
 };
 use reth_revm::{
-    database::StateProviderDatabase,
-    db::{Cache, DbAccount},
+    database::{EvmStateProvider, StateProviderDatabase},
+    db::{AccountStatus, Cache, DbAccount},
     witness::{self, ExecutionWitnessRecord},
     State,
 };
@@ -33,8 +39,14 @@ use reth_stateless::{
     witness_db::WitnessDatabase,
     ExecutionWitness, UncompressedPublicKey,
 };
-use reth_trie::{HashedPostState, KeccakKeyHasher, StateRoot};
-use reth_trie_db::DatabaseStateRoot;
+use reth_trie::{
+    trie_cursor::{TrieCursor, TrieCursorFactory},
+    HashedPostState, KeccakKeyHasher, StateRoot,
+};
+use reth_trie_db::{
+    DatabaseHashedCursorFactory, DatabaseHashedStorage, DatabaseStateRoot,
+    DatabaseStorageTrieCursor, DatabaseTrieCursorFactory,
+};
 use revm::{
     primitives::HashMap,
     state::{AccountInfo, Bytecode},
@@ -323,6 +335,30 @@ fn run_case(
                             db_account.storage.insert(*slot, val);
                         }
                     }
+                    if account.status == AccountStatus::Destroyed {
+                        // Get the transaction reference
+                        let tx = provider.tx_ref();
+
+                        // PlainStorageState is a DupSort table, so use cursor_dup_read
+                        let mut storage_cursor =
+                            tx.cursor_dup_read::<tables::PlainStorageState>().unwrap();
+
+                        // Seek to the first storage entry for this address
+                        if let Some((_, first_entry)) = storage_cursor.seek_exact(*address).unwrap()
+                        {
+                            db_account
+                                .storage
+                                .insert(U256::from_be_bytes(first_entry.key.0), first_entry.value);
+
+                            // Iterate over remaining storage slots for this address
+                            while let Some((_, entry)) = storage_cursor.next_dup().unwrap() {
+                                db_account
+                                    .storage
+                                    .insert(U256::from_be_bytes(entry.key.0), entry.value);
+                            }
+                        }
+                    }
+
                     cache.accounts.insert(*address, db_account);
                 }
             })
