@@ -4,7 +4,7 @@ use crate::{
     models::{BlockchainTest, ForkSpec},
     Case, Error, Suite,
 };
-use alloy_primitives::{keccak256, FixedBytes, B256, U256};
+use alloy_primitives::{hex::FromHex, keccak256, Address, FixedBytes, B256, U256};
 use alloy_rlp::{Decodable, Encodable};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use reth_chainspec::ChainSpec;
@@ -38,6 +38,7 @@ use reth_trie_db::DatabaseStateRoot;
 use revm::{
     primitives::HashMap,
     state::{AccountInfo, Bytecode},
+    Database,
 };
 use std::{
     collections::BTreeMap,
@@ -301,15 +302,18 @@ fn run_case(
                     .collect();
 
                 for (address, account) in &statedb.cache.accounts {
-                    let mut db_account = DbAccount {
-                        info: state_provider
-                            .basic_account(address)
-                            .expect("Get prestate account")
-                            .unwrap_or_default()
-                            .into(),
-                        account_state: Default::default(),
-                        storage: Default::default(),
+                    let provider_account =
+                        state_provider.basic_account(address).expect("Get prestate account");
+
+                    let mut db_account = match provider_account {
+                        Some(account) => DbAccount {
+                            info: account.into(),
+                            account_state: Default::default(),
+                            storage: Default::default(),
+                        },
+                        None => DbAccount::new_not_existing(),
                     };
+
                     if let Some(account) = &account.account {
                         for slot in account.storage.keys() {
                             let val = state_provider
@@ -433,6 +437,29 @@ fn run_case(
         )
         .expect("stateless validation failed");
 
+        {
+            // let (_, parent, ancestor_hashes) = reth_stateless::validation::get_witness_components(
+            //     block.clone(),
+            //     public_keys.clone(),
+            //     &execution_witness.headers,
+            //     chain_spec.clone(),
+            // )
+            // .unwrap();
+
+            // // Verify that the pre-state reads are correct
+            // let (trie, bytecode) =
+            //     StatelessSparseTrie::new(execution_witness, parent.state_root).unwrap();
+            // let mut db = WitnessDatabase::new(&trie, bytecode, ancestor_hashes);
+
+            // let addr = Address::from_hex(
+            //     "9d860e7bb7e6b09b87ab7406933ef2980c19d7d0192d8939cf6dc6908a03305f",
+            // )
+            // .unwrap();
+            // let account =
+            //     db.basic(addr).expect("Failed to get account from witness database").unwrap();
+            // println!("Account {addr} from witness DB: {account:#?}");
+        }
+
         let (_, flatdb_post_state) = stateless_validation_with_flatdb::<_, _>(
             block,
             public_keys,
@@ -443,8 +470,8 @@ fn run_case(
         .expect("stateless validation with flatdb failed");
 
         if trie_post_state != flatdb_post_state {
-            // println!("Trie post state: {trie_post_state:#?}");
-            // println!("Flatdb post state: {flatdb_post_state:#?}");
+            println!("Trie post state: {trie_post_state:#?}");
+            println!("Flatdb post state: {flatdb_post_state:#?}");
             return Err(Error::Assertion(
                 "Post state mismatch between trie and flatdb implementations".to_string(),
             ));
