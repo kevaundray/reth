@@ -97,12 +97,12 @@ impl BlockchainTestCase {
     const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
-            ForkSpec::ByzantiumToConstantinopleAt5
-                | ForkSpec::Constantinople
-                | ForkSpec::ConstantinopleFix
-                | ForkSpec::MergeEOF
-                | ForkSpec::MergeMeterInitCode
-                | ForkSpec::MergePush0
+            ForkSpec::ByzantiumToConstantinopleAt5 |
+                ForkSpec::Constantinople |
+                ForkSpec::ConstantinopleFix |
+                ForkSpec::MergeEOF |
+                ForkSpec::MergeMeterInitCode |
+                ForkSpec::MergePush0
         )
     }
 
@@ -497,9 +497,9 @@ fn run_case(
             ));
         }
 
-        // Validate that the flatdb used as pre-state can be proven using a sparse trie (i.e., in a different proof).
-        // Also checks that the post-state diff generated during flatdb execution results in the expected post-state
-        // root.
+        // Validate that the flatdb used as pre-state can be proven using a sparse trie (i.e., in a
+        // different proof). Also checks that the post-state diff generated during flatdb
+        // execution results in the expected post-state root.
         stateless_validation_flatdb_state_check::<StatelessSparseTrie, _>(
             block,
             public_keys,

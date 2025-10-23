@@ -235,8 +235,9 @@ where
 
     // TODO: Track cycles
 
-    // Verify that the flatdb state matches the sparse trie state. Note the sparse trie state could contain more
-    // accounts/storage, but that's fine since it is only used as a source of truth to verify flatdb.
+    // Verify that the flatdb state matches the sparse trie state. Note the sparse trie state could
+    // contain more accounts/storage, but that's fine since it is only used as a source of truth
+    // to verify flatdb.
     for (address, flatdb_account) in flat_witness.cache.accounts {
         let trie_account = db.basic(address).unwrap();
         let flatdb_account = (flatdb_account.account_state != AccountState::NotExisting)
@@ -296,7 +297,8 @@ where
     Ok((recovered_block.hash_slow(), hashed_post_state))
 }
 
-/// Executes the block statelessly with a provided `Database` and performs post-execution validation.
+/// Executes the block statelessly with a provided `Database` and performs post-execution
+/// validation.
 pub fn stateless_validation_execution<DB: reth_evm::Database, ChainSpec, E>(
     current_block: &RecoveredBlock<Block>,
     parent: &SealedHeader,
