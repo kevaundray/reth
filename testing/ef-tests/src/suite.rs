@@ -32,6 +32,7 @@ pub trait Suite {
     ///
     /// This recursively finds every test description in the resulting path.
     fn run_only(&self, name: &str) {
+        println!("Running test suite: {name}");
         // Build the path to the test suite directory
         let suite_path = self.suite_path().join(name);
 

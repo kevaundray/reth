@@ -27,8 +27,10 @@ use reth_revm::{
     State,
 };
 use reth_stateless::{
+    flat_execution_witness::FlatExecutionWitness,
     trie::StatelessSparseTrie,
-    validation::{stateless_validation_with_cache, stateless_validation_with_trie},
+    validation::{stateless_validation_with_flatdb, stateless_validation_with_trie},
+    witness_db::WitnessDatabase,
     ExecutionWitness, UncompressedPublicKey,
 };
 use reth_trie::{HashedPostState, KeccakKeyHasher, StateRoot};
@@ -256,7 +258,6 @@ fn run_case(
     let mut caches = Vec::new();
 
     for (block_index, block) in blocks.iter().enumerate() {
-        println!("Processing block {}", block.number);
         // Note: same as the comment on `decode_blocks` as to why we cannot use block.number
         let block_number = (block_index + 1) as u64;
 
@@ -359,7 +360,7 @@ fn run_case(
             .map(|(bytes, num)| (U256::from(num), keccak256(bytes)))
             .collect();
 
-        println!("Cache: {cache:#?}");
+        // println!("Cache: {cache:#?}");
 
         program_inputs.push((block.clone(), exec_witness));
         caches.push(cache);
@@ -431,21 +432,19 @@ fn run_case(
             EthEvmConfig::new(chain_spec.clone()),
         )
         .expect("stateless validation failed");
-        println!("Trie post state: {trie_post_state:#?}");
 
-        let (_, flatdb_post_state) = stateless_validation_with_cache::<StatelessSparseTrie, _, _>(
+        let (_, flatdb_post_state) = stateless_validation_with_flatdb::<_, _>(
             block,
             public_keys,
-            execution_witness.clone(),
+            FlatExecutionWitness { cache, headers: execution_witness.headers.clone() }, // TODO: clone
             chain_spec.clone(),
             EthEvmConfig::new(chain_spec.clone()),
-            cache,
         )
         .expect("stateless validation with flatdb failed");
 
-        println!("Flatdb post state: {flatdb_post_state:#?}");
-
         if trie_post_state != flatdb_post_state {
+            // println!("Trie post state: {trie_post_state:#?}");
+            // println!("Flatdb post state: {flatdb_post_state:#?}");
             return Err(Error::Assertion(
                 "Post state mismatch between trie and flatdb implementations".to_string(),
             ));

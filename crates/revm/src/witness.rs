@@ -47,9 +47,6 @@ impl ExecutionWitnessRecord {
             .collect();
 
         for (address, account) in &statedb.cache.accounts {
-            if address[0] == 0xa9 {
-                println!("Account: {address}, {:?}", account.account);
-            }
             let hashed_address = keccak256(address);
             self.hashed_state
                 .accounts

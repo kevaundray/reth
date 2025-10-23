@@ -39,6 +39,8 @@ mod recover_block;
 /// Sparse trie implementation for stateless validation
 pub mod trie;
 
+pub mod flat_execution_witness;
+
 use alloy_genesis::ChainConfig;
 #[doc(inline)]
 pub use recover_block::UncompressedPublicKey;
@@ -51,7 +53,7 @@ pub use alloy_genesis::Genesis;
 
 /// Implementation of stateless validation
 pub mod validation;
-pub(crate) mod witness_db;
+pub mod witness_db; // TODO: revert since it is temporal for ebugging
 
 #[doc(inline)]
 pub use alloy_rpc_types_debug::ExecutionWitness;
