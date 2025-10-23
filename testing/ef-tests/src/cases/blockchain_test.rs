@@ -35,7 +35,10 @@ use reth_revm::{
 use reth_stateless::{
     flat_execution_witness::FlatExecutionWitness,
     trie::StatelessSparseTrie,
-    validation::{stateless_validation_with_flatdb, stateless_validation_with_trie},
+    validation::{
+        stateless_validation_flatdb_state_check, stateless_validation_with_flatdb,
+        stateless_validation_with_trie,
+    },
     witness_db::WitnessDatabase,
     ExecutionWitness, UncompressedPublicKey,
 };
@@ -464,6 +467,7 @@ fn run_case(
         let public_keys = recover_signers(block.body().transactions())
             .expect("Failed to recover public keys from transaction signatures");
 
+        // Validate stateless execution using a sparse trie for the storage access.
         let (_, trie_post_state) = stateless_validation_with_trie::<StatelessSparseTrie, _, _>(
             block.clone(),
             public_keys.clone(),
@@ -473,33 +477,13 @@ fn run_case(
         )
         .expect("stateless validation failed");
 
-        {
-            // let (_, parent, ancestor_hashes) = reth_stateless::validation::get_witness_components(
-            //     block.clone(),
-            //     public_keys.clone(),
-            //     &execution_witness.headers,
-            //     chain_spec.clone(),
-            // )
-            // .unwrap();
-
-            // // Verify that the pre-state reads are correct
-            // let (trie, bytecode) =
-            //     StatelessSparseTrie::new(execution_witness, parent.state_root).unwrap();
-            // let mut db = WitnessDatabase::new(&trie, bytecode, ancestor_hashes);
-
-            // let addr = Address::from_hex(
-            //     "9d860e7bb7e6b09b87ab7406933ef2980c19d7d0192d8939cf6dc6908a03305f",
-            // )
-            // .unwrap();
-            // let account =
-            //     db.basic(addr).expect("Failed to get account from witness database").unwrap();
-            // println!("Account {addr} from witness DB: {account:#?}");
-        }
-
+        let flatdb_witness =
+            FlatExecutionWitness { cache, headers: execution_witness.headers.clone() }; // TODO: clone
+                                                                                        // Validate stateless execution using a flatdb for the storage access.
         let (_, flatdb_post_state) = stateless_validation_with_flatdb::<_, _>(
-            block,
-            public_keys,
-            FlatExecutionWitness { cache, headers: execution_witness.headers.clone() }, // TODO: clone
+            block.clone(),
+            public_keys.clone(),
+            flatdb_witness.clone(),
             chain_spec.clone(),
             EthEvmConfig::new(chain_spec.clone()),
         )
@@ -512,6 +496,19 @@ fn run_case(
                 "Post state mismatch between trie and flatdb implementations".to_string(),
             ));
         }
+
+        // Validate that the flatdb used as pre-state can be proven using a sparse trie (i.e., in a different proof).
+        // Also checks that the post-state diff generated during flatdb execution results in the expected post-state
+        // root.
+        stateless_validation_flatdb_state_check::<StatelessSparseTrie, _>(
+            block,
+            public_keys,
+            execution_witness.clone(),
+            chain_spec.clone(),
+            flatdb_witness,
+            flatdb_post_state,
+        )
+        .unwrap();
     }
 
     Ok(program_inputs)

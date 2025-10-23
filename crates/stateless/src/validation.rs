@@ -20,11 +20,12 @@ use reth_consensus::{Consensus, HeaderValidator};
 use reth_errors::ConsensusError;
 use reth_ethereum_consensus::{validate_block_post_execution, EthBeaconConsensus};
 use reth_ethereum_primitives::{Block, EthPrimitives};
-use reth_evm::{execute::Executor, ConfigureEvm, Database};
+use reth_evm::{execute::Executor, ConfigureEvm};
 use reth_primitives_traits::{RecoveredBlock, SealedHeader};
 use reth_revm::{
-    db::{Cache, InMemoryDB},
+    db::{AccountState, Cache, InMemoryDB},
     state::Bytecode,
+    Database,
 };
 use reth_trie_common::{HashedPostState, KeccakKeyHasher};
 
@@ -107,6 +108,10 @@ pub enum StatelessValidationError {
     /// Custom error.
     #[error("{0}")]
     Custom(&'static str),
+
+    /// Error calculating the pre-state root from the witness data.
+    #[error("flatdb and sparse trie validation mismatch")]
+    FlatdbSparseTrieMismatch,
 }
 
 /// Performs stateless validation of a block using the provided witness data.
@@ -209,6 +214,64 @@ where
     Ok((recovered_block.hash_slow(), hashed_post_state))
 }
 
+pub fn stateless_validation_flatdb_state_check<T, ChainSpec>(
+    current_block: Block,
+    public_keys: Vec<UncompressedPublicKey>,
+    trie_witness: ExecutionWitness,
+    chain_spec: Arc<ChainSpec>,
+    flat_witness: FlatExecutionWitness,
+    flatdb_poststate: HashedPostState,
+) -> Result<B256, StatelessValidationError>
+where
+    T: StatelessTrie,
+    ChainSpec: Send + Sync + EthChainSpec<Header = Header> + EthereumHardforks + Debug,
+{
+    let (recovered_block, parent, ancestor_hashes) =
+        get_witness_components(current_block, public_keys, &trie_witness.headers, chain_spec)?;
+
+    // Verify that the pre-state reads are correct
+    let (mut trie, _) = track_cycles!("verify_witness", T::new(&trie_witness, parent.state_root)?); // TODO: explain the Default()
+    let mut db = WitnessDatabase::new(&trie, Default::default(), ancestor_hashes);
+
+    // TODO: Track cycles
+
+    // Verify that the flatdb state matches the sparse trie state. Note the sparse trie state could contain more
+    // accounts/storage, but that's fine since it is only used as a source of truth to verify flatdb.
+    for (address, flatdb_account) in flat_witness.cache.accounts {
+        let trie_account = db.basic(address).unwrap();
+        let flatdb_account = (flatdb_account.account_state != AccountState::NotExisting)
+            .then_some(flatdb_account.info);
+
+        if trie_account != flatdb_account {
+            return Err(StatelessValidationError::FlatdbSparseTrieMismatch);
+        }
+    }
+
+    // Verify that the contract code hashed map was correctly constructed.
+    for (expected_codehash, flatdb_code) in &flat_witness.cache.contracts {
+        let got_codehash = keccak256(flatdb_code.original_bytes());
+        if got_codehash != *expected_codehash {
+            return Err(StatelessValidationError::FlatdbSparseTrieMismatch);
+        }
+    }
+
+    // TODO: check flat_witness.ancestors
+
+    // Compute and check the post state root
+    track_cycles!("post_state_compute", {
+        let state_root = trie.calculate_state_root(flatdb_poststate)?;
+        if state_root != recovered_block.state_root {
+            return Err(StatelessValidationError::PostStateRootMismatch {
+                got: state_root,
+                expected: recovered_block.state_root,
+            });
+        }
+    });
+
+    // Return block hash
+    Ok(recovered_block.hash_slow())
+}
+
 /// Performs stateless validation of a block using a flatdb execution witness.
 pub fn stateless_validation_with_flatdb<ChainSpec, E>(
     current_block: Block,
@@ -234,7 +297,7 @@ where
 }
 
 /// Executes the block statelessly with a provided `Database` and performs post-execution validation.
-pub fn stateless_validation_execution<DB: Database, ChainSpec, E>(
+pub fn stateless_validation_execution<DB: reth_evm::Database, ChainSpec, E>(
     current_block: &RecoveredBlock<Block>,
     parent: &SealedHeader,
     chain_spec: Arc<ChainSpec>,
