@@ -63,18 +63,18 @@ impl FlatExecutionWitness {
 
 /// Database backend that fails on all accesses except storage reads from self-destructed accounts.
 ///
-/// This enforces that all state accesses during execution must be present in the cache. Cache misses
-/// indicate missing witness data and must fail, since only cached accesses are cryptographically verified
-/// against the trie witness proof. Returning default values would bypass verification.
+/// This enforces that all state accesses during execution must be present in the cache. Cache
+/// misses indicate missing witness data and must fail, since only cached accesses are
+/// cryptographically verified against the trie witness proof. Returning default values would bypass
+/// verification.
 ///
 /// **Exception: Self-destructed account storage**
 ///
 /// Storage reads from self-destructed accounts return zero (`Default::default()`) on cache miss.
-/// This is safe because the trie witness includes complete storage tries for self-destructed accounts,
-/// not just accessed slots—allowing any non-existent slot to be proven as zero. This behavior matches
-/// the witness generation in `TrieWitness::get_proof_targets` and compensates for `StateDB` not tracking
-/// individual storage accesses of self-destructed accounts.
-///
+/// This is safe because the trie witness includes complete storage tries for self-destructed
+/// accounts, not just accessed slots—allowing any non-existent slot to be proven as zero. This
+/// behavior matches the witness generation in `TrieWitness::get_proof_targets` and compensates for
+/// `StateDB` not tracking individual storage accesses of self-destructed accounts.
 #[derive(Debug, Clone)]
 pub struct SelfDestructCompatibleFailingDB {
     destructed_addresses: HashSet<Address>,

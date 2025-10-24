@@ -79,12 +79,12 @@ impl BlockchainTestCase {
     const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
-            ForkSpec::ByzantiumToConstantinopleAt5
-                | ForkSpec::Constantinople
-                | ForkSpec::ConstantinopleFix
-                | ForkSpec::MergeEOF
-                | ForkSpec::MergeMeterInitCode
-                | ForkSpec::MergePush0
+            ForkSpec::ByzantiumToConstantinopleAt5 |
+                ForkSpec::Constantinople |
+                ForkSpec::ConstantinopleFix |
+                ForkSpec::MergeEOF |
+                ForkSpec::MergeMeterInitCode |
+                ForkSpec::MergePush0
         )
     }
 
