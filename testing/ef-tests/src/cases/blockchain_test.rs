@@ -117,7 +117,7 @@ impl BlockchainTestCase {
     pub fn run_single_case(
         name: &str,
         case: &BlockchainTest,
-    ) -> Result<Vec<(RecoveredBlock<Block>, ExecutionWitness, FlatExecutionWitness)>, Error> {
+    ) -> Result<Vec<(RecoveredBlock<Block>, ExecutionWitnesses)>, Error> {
         let expectation = Self::expected_failure(case);
         match run_case(case) {
             // All blocks executed successfully.
@@ -198,6 +198,15 @@ impl Case for BlockchainTestCase {
     }
 }
 
+/// Execution witnessses for both trie and flatdb stateless validation.
+#[derive(Debug, Clone)]
+pub struct ExecutionWitnesses {
+    /// Trie-based execution witness.
+    pub trie: ExecutionWitness,
+    /// Flatdb-based execution witness.
+    pub flatdb: FlatExecutionWitness,
+}
+
 /// Executes a single `BlockchainTest` returning an error as soon as any block has a consensus
 /// validation failure.
 ///
@@ -214,7 +223,7 @@ impl Case for BlockchainTestCase {
 ///   witness if the error is of variant `BlockProcessingFailed`.
 fn run_case(
     case: &BlockchainTest,
-) -> Result<Vec<(RecoveredBlock<Block>, ExecutionWitness, FlatExecutionWitness)>, Error> {
+) -> Result<Vec<(RecoveredBlock<Block>, ExecutionWitnesses)>, Error> {
     // Create a new test database and initialize a provider for the test case.
     let chain_spec: Arc<ChainSpec> = Arc::new(case.network.into());
     let factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
@@ -252,8 +261,7 @@ fn run_case(
 
     let executor_provider = EthEvmConfig::ethereum(chain_spec.clone());
     let mut parent = genesis_block;
-    let mut program_inputs: Vec<(RecoveredBlock<Block>, ExecutionWitness, FlatExecutionWitness)> =
-        Vec::new();
+    let mut program_inputs: Vec<(RecoveredBlock<Block>, ExecutionWitnesses)> = Vec::new();
 
     for (block_index, block) in blocks.iter().enumerate() {
         // Note: same as the comment on `decode_blocks` as to why we cannot use block.number
@@ -271,9 +279,7 @@ fn run_case(
 
         // Consensus checks before block execution
         pre_execution_checks(chain_spec.clone(), &parent, block).map_err(|err| {
-            let (execution_witness, flatdb_execution_witness) =
-                execution_witness_with_parent(&parent);
-            program_inputs.push((block.clone(), execution_witness, flatdb_execution_witness));
+            program_inputs.push((block.clone(), execution_witness_with_parent(&parent)));
             Error::block_failed(block_number, program_inputs.clone(), err)
         })?;
 
@@ -336,7 +342,8 @@ fn run_case(
             parent.header().clone(),
         );
 
-        program_inputs.push((block.clone(), exec_witness, flat_witness));
+        program_inputs
+            .push((block.clone(), ExecutionWitnesses { trie: exec_witness, flatdb: flat_witness }));
 
         // Compute and check the post state root
         let hashed_state =
@@ -390,7 +397,7 @@ fn run_case(
     }
 
     // Now validate using the stateless client if everything else passes
-    for (recovered_block, execution_witness, flatdb_witness) in &program_inputs {
+    for (recovered_block, execution_witnesses) in &program_inputs {
         let block = recovered_block.clone().into_block();
 
         // Recover the actual public keys from the transaction signatures
@@ -401,7 +408,7 @@ fn run_case(
         let (_, trie_post_state) = stateless_validation_with_trie::<StatelessSparseTrie, _, _>(
             block.clone(),
             public_keys.clone(),
-            execution_witness.clone(),
+            execution_witnesses.trie.clone(),
             chain_spec.clone(),
             EthEvmConfig::new(chain_spec.clone()),
         )
@@ -411,15 +418,13 @@ fn run_case(
         let (_, flatdb_post_state) = stateless_validation_with_flatdb::<_, _>(
             block.clone(),
             public_keys.clone(),
-            flatdb_witness.clone(),
+            execution_witnesses.flatdb.clone(),
             chain_spec.clone(),
             EthEvmConfig::new(chain_spec.clone()),
         )
         .expect("stateless validation with flatdb failed");
 
         if trie_post_state != flatdb_post_state {
-            println!("Trie post state: {trie_post_state:#?}");
-            println!("Flatdb post state: {flatdb_post_state:#?}");
             return Err(Error::Assertion(
                 "Post state mismatch between trie and flatdb implementations".to_string(),
             ));
@@ -430,8 +435,8 @@ fn run_case(
         // execution results in the expected post-state root.
         stateless_validation_flatdb_storage_check::<StatelessSparseTrie>(
             block,
-            execution_witness.clone(),
-            flatdb_witness.state.clone(),
+            execution_witnesses.trie.clone(),
+            execution_witnesses.flatdb.state.clone(),
             flatdb_post_state,
         )
         .expect("stateless flatdb state check failed");
@@ -571,12 +576,10 @@ fn path_contains(path_str: &str, rhs: &[&str]) -> bool {
     path_str.contains(&rhs)
 }
 
-fn execution_witness_with_parent(
-    parent: &RecoveredBlock<Block>,
-) -> (ExecutionWitness, FlatExecutionWitness) {
+fn execution_witness_with_parent(parent: &RecoveredBlock<Block>) -> ExecutionWitnesses {
     let mut serialized_header = Vec::new();
     parent.header().encode(&mut serialized_header);
-    let execution_witness =
+    let trie_witness =
         ExecutionWitness { headers: vec![serialized_header.into()], ..Default::default() };
     // let mut block_hashes = alloy_primitives::map::HashMap::default();
     // block_hashes.insert(U256::from(parent.number), parent.hash());
@@ -587,5 +590,5 @@ fn execution_witness_with_parent(
         Default::default(),
         parent.header().clone(),
     );
-    (execution_witness, flatdb_witness)
+    ExecutionWitnesses { trie: trie_witness, flatdb: flatdb_witness }
 }
