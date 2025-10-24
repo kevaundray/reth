@@ -37,7 +37,7 @@ use reth_stateless::{
     flat_execution_witness::FlatExecutionWitness,
     trie::StatelessSparseTrie,
     validation::{
-        stateless_validation_flatdb_state_check, stateless_validation_with_flatdb,
+        stateless_validation_flatdb_storage_check, stateless_validation_with_flatdb,
         stateless_validation_with_trie,
     },
     ExecutionWitness, UncompressedPublicKey,
@@ -492,7 +492,7 @@ fn run_case(
         // Validate that the flatdb used as pre-state can be proven using a sparse trie (i.e., in a
         // different proof). Also checks that the post-state diff generated during flatdb
         // execution results in the expected post-state root.
-        stateless_validation_flatdb_state_check::<StatelessSparseTrie>(
+        stateless_validation_flatdb_storage_check::<StatelessSparseTrie>(
             block,
             execution_witness.clone(),
             flatdb_witness.state,

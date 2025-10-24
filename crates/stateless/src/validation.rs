@@ -14,7 +14,7 @@ use alloc::{
     vec::Vec,
 };
 use alloy_consensus::{BlockHeader, Header};
-use alloy_primitives::{keccak256, Bytes, FixedBytes, B256};
+use alloy_primitives::{keccak256, Bytes, B256};
 use reth_chainspec::{EthChainSpec, EthereumHardforks};
 use reth_consensus::{Consensus, HeaderValidator};
 use reth_errors::ConsensusError;
@@ -187,8 +187,12 @@ where
     ChainSpec: Send + Sync + EthChainSpec<Header = Header> + EthereumHardforks + Debug,
     E: ConfigureEvm<Primitives = EthPrimitives> + Clone + 'static,
 {
-    let (recovered_block, parent, ancestor_hashes) =
-        get_witness_components(current_block, public_keys, &witness.headers, chain_spec.clone())?;
+    let ExecutionContext { block, parent, ancestor_hashes } = prepare_execution_context(
+        current_block,
+        public_keys,
+        &witness.headers,
+        chain_spec.clone(),
+    )?;
 
     // Verify that the pre-state reads are correct
     let (mut trie, bytecode) =
@@ -196,77 +200,21 @@ where
     let db = WitnessDatabase::new(&trie, bytecode, ancestor_hashes);
 
     let hashed_post_state =
-        stateless_validation_execution(&recovered_block, &parent, chain_spec, evm_config, db)?;
+        stateless_validation_execution(&block, &parent, chain_spec, evm_config, db)?;
 
     // Compute and check the post state root
     track_cycles!("post_state_compute", {
         let state_root = trie.calculate_state_root(hashed_post_state.clone())?;
-        if state_root != recovered_block.state_root {
+        if state_root != block.state_root {
             return Err(StatelessValidationError::PostStateRootMismatch {
                 got: state_root,
-                expected: recovered_block.state_root,
+                expected: block.state_root,
             });
         }
     });
 
     // Return block hash
-    Ok((recovered_block.hash_slow(), hashed_post_state))
-}
-
-pub fn stateless_validation_flatdb_state_check<T>(
-    current_block: Block,
-    trie_witness: ExecutionWitness,
-    flatdb_state: Cache,
-    flatdb_poststate: HashedPostState,
-) -> Result<B256, StatelessValidationError>
-where
-    T: StatelessTrie,
-{
-    let sealed_block = reth_primitives_traits::Block::seal_slow(current_block);
-    let (parent, ancestor_hashes) = process_headers(&sealed_block, &trie_witness.headers)?;
-
-    // Verify that the pre-state reads are correct
-    let (mut trie, _) = track_cycles!("verify_witness", T::new(&trie_witness, parent.state_root)?); // TODO: explain the Default()
-    let mut db = WitnessDatabase::new(&trie, Default::default(), ancestor_hashes);
-
-    // TODO: Track cycles
-
-    // Verify that the flatdb state matches the sparse trie state. Note the sparse trie state could
-    // contain more accounts/storage, but that's fine since it is only used as a source of truth
-    // to verify flatdb.
-    for (address, flatdb_account) in flatdb_state.accounts {
-        let trie_account = db.basic(address).unwrap();
-        let flatdb_account = (flatdb_account.account_state != AccountState::NotExisting)
-            .then_some(flatdb_account.info);
-
-        if trie_account != flatdb_account {
-            return Err(StatelessValidationError::FlatdbSparseTrieMismatch);
-        }
-    }
-
-    // Verify that the contract code hashed map was correctly constructed.
-    for (expected_codehash, flatdb_code) in &flatdb_state.contracts {
-        let got_codehash = keccak256(flatdb_code.original_bytes());
-        if got_codehash != *expected_codehash {
-            return Err(StatelessValidationError::FlatdbSparseTrieMismatch);
-        }
-    }
-
-    // TODO: check flat_witness.ancestors
-
-    // Compute and check the post state root
-    track_cycles!("post_state_compute", {
-        let state_root = trie.calculate_state_root(flatdb_poststate)?;
-        if state_root != sealed_block.state_root {
-            return Err(StatelessValidationError::PostStateRootMismatch {
-                got: state_root,
-                expected: sealed_block.state_root,
-            });
-        }
-    });
-
-    // Return block hash
-    Ok(sealed_block.hash())
+    Ok((block.hash_slow(), hashed_post_state))
 }
 
 /// Performs stateless validation of a block using a flatdb execution witness.
@@ -329,25 +277,121 @@ where
     Ok(HashedPostState::from_bundle_state::<KeccakKeyHasher>(&output.state.state))
 }
 
-pub fn get_witness_components<ChainSpec>(
+/// Cross-validates flatdb state against a cryptographically verified sparse trie witness.
+///
+/// Flatdb provides optimized flat storage for EVM execution, but lacks cryptographic
+/// verification. This function ensures flatdb was correctly constructed by checking that:
+/// - Block hashes match between flatdb and the verified trie witness
+/// - Contract bytecode hashes are correct
+/// - Account state matches the sparse trie (witness may contain extra accounts; that's ok)
+/// - Post-state root computed from flatdb matches the block header
+///
+/// Returns block hash if all validations pass.
+pub fn stateless_validation_flatdb_storage_check<T>(
+    current_block: Block,
+    trie_witness: ExecutionWitness,
+    flatdb_pre_state: Cache,
+    flatdb_post_state: HashedPostState,
+) -> Result<B256, StatelessValidationError>
+where
+    T: StatelessTrie,
+{
+    let sealed_block = reth_primitives_traits::Block::seal_slow(current_block);
+    let (parent, ancestor_hashes) =
+        parse_and_validate_ancestor_chain(&sealed_block, &trie_witness.headers)?;
+
+    // Verify that the flatdb block hashes map was correctly constructed.
+    track_cycles!("verify_flatdb_block_hashes", {
+        for (block_num, block_hash) in flatdb_pre_state.block_hashes {
+            let block_num = block_num.try_into().unwrap();
+            match ancestor_hashes.get(&block_num) {
+                Some(expected_hash) if *expected_hash == block_hash => {}
+                _ => return Err(StatelessValidationError::FlatdbSparseTrieMismatch),
+            }
+        }
+    });
+
+    // Verify that the contract code hashed map was correctly constructed.
+    track_cycles!("verify_flatdb_bytecodes", {
+        for (expected_codehash, flatdb_code) in &flatdb_pre_state.contracts {
+            let got_codehash = keccak256(flatdb_code.original_bytes());
+            if got_codehash != *expected_codehash {
+                return Err(StatelessValidationError::FlatdbSparseTrieMismatch);
+            }
+        }
+    });
+
+    // Verify the trie witness so we have a cryptographically verified state to compare against.
+    let (mut trie, _) =
+        track_cycles!("verify_trie_witness", T::new(&trie_witness, parent.state_root)?); // TODO: explain the Default()
+
+    // Verify that all accounts in flatdb pre-state match those in the trie witness.
+    track_cycles!("verify_flatdb_state_against_trie", {
+        let mut db = WitnessDatabase::new(&trie, Default::default(), ancestor_hashes);
+        for (address, flatdb_account) in flatdb_pre_state.accounts {
+            let trie_account = db.basic(address).unwrap();
+            let flatdb_account = (flatdb_account.account_state != AccountState::NotExisting)
+                .then_some(flatdb_account.info);
+
+            if trie_account != flatdb_account {
+                return Err(StatelessValidationError::FlatdbSparseTrieMismatch);
+            }
+        }
+    });
+
+    // Compute and check the post state root using the provided post-state from the execution using flatdb state.
+    track_cycles!("post_state_compute", {
+        let state_root = trie.calculate_state_root(flatdb_post_state)?;
+        if state_root != sealed_block.state_root {
+            return Err(StatelessValidationError::PostStateRootMismatch {
+                got: state_root,
+                expected: sealed_block.state_root,
+            });
+        }
+    });
+
+    Ok(sealed_block.hash())
+}
+
+/// Execution context prepared from witness data for stateless block validation.
+#[derive(Debug, Clone)]
+pub struct ExecutionContext {
+    /// The current block being validated, with transaction signers recovered from signatures.
+    pub block: RecoveredBlock<Block>,
+    /// The immediate parent header, containing the pre-state root required for witness verification.
+    pub parent: SealedHeader,
+    /// Map of ancestor block numbers to their hashes, used for BLOCKHASH opcode lookups.
+    /// Limited to 256 most recent blocks per EVM specification.
+    pub ancestor_hashes: BTreeMap<u64, B256>,
+}
+
+/// Extracts and validates the core witness components required for stateless execution.
+///
+/// This function prepares three essential components from raw witness data:
+/// 1. **Recovered Block**: Validates and recovers transaction signers using provided public keys
+/// 2. **Parent Header**: The immediate ancestor header containing the pre-state root
+/// 3. **Ancestor Hashes**: Block hash map for BLOCKHASH opcode support (up to 256 blocks)
+///
+/// The ancestor headers must form a contiguous chain leading to `current_block`'s parent.
+/// At least one ancestor header (the parent) is required for pre-state root verification.
+///
+pub fn prepare_execution_context<ChainSpec>(
     current_block: Block,
     public_keys: Vec<UncompressedPublicKey>,
     headers: &[Bytes],
     chain_spec: Arc<ChainSpec>,
-) -> Result<
-    (RecoveredBlock<Block>, SealedHeader, BTreeMap<u64, FixedBytes<32>>),
-    StatelessValidationError,
->
+) -> Result<ExecutionContext, StatelessValidationError>
 where
     ChainSpec: Send + Sync + EthChainSpec<Header = Header> + EthereumHardforks + Debug,
 {
-    let current_block = recover_block_with_public_keys(current_block, public_keys, &*chain_spec)?;
-    let (parent, ancestor_hashes) = process_headers(&current_block, headers)?;
+    let block = recover_block_with_public_keys(current_block, public_keys, &*chain_spec)?;
+    let (parent, ancestor_hashes) = parse_and_validate_ancestor_chain(&block, headers)?;
 
-    Ok((current_block, parent.clone(), ancestor_hashes))
+    Ok(ExecutionContext { block, parent, ancestor_hashes })
 }
 
-pub fn process_headers(
+/// Deserializes, validates, and extracts ancestor headers from raw witness data.
+pub fn parse_and_validate_ancestor_chain(
     current_block: &SealedBlock<Block>,
     headers: &[Bytes],
 ) -> Result<(SealedHeader, BTreeMap<u64, B256>), StatelessValidationError> {
