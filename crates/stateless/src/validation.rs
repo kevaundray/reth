@@ -108,9 +108,36 @@ pub enum StatelessValidationError {
     #[error("{0}")]
     Custom(&'static str),
 
-    /// Error calculating the pre-state root from the witness data.
+    /// Error validating the flatdb against the sparse trie witness.
     #[error("flatdb and sparse trie validation mismatch")]
     FlatdbSparseTrieMismatch,
+
+    /// Error when a block hash in flatdb does not match the expected ancestor hash.
+    #[error("flatdb ancestor hash not found in witness for block {block_number}: got {got}, expected {expected:?}")]
+    FlatdbAncestorHashNotFound {
+        /// The block number being checked.
+        block_number: u64,
+        /// The block hash from flatdb.
+        got: B256,
+        /// The expected block hash from the witness.
+        expected: Option<B256>,
+    },
+
+    /// Error when flatdb bytecode hash does not match the computed hash.
+    #[error("flatdb bytecode hash mismatch: computed {got}, expected {expected}")]
+    FlatdbBytecodeHashMismatch {
+        /// The computed hash from the bytecode.
+        got: B256,
+        /// The expected code hash from flatdb.
+        expected: B256,
+    },
+
+    /// Error when flatdb account state does not match the trie witness.
+    #[error("flatdb account state mismatch with trie witness for address {address}")]
+    FlatdbAccountStateMismatch {
+        /// The address of the account with mismatched state.
+        address: alloy_primitives::Address,
+    },
 }
 
 /// Performs stateless validation of a block using the provided witness data.
@@ -306,7 +333,13 @@ where
             let block_num = block_num.try_into().unwrap();
             match ancestor_hashes.get(&block_num) {
                 Some(expected_hash) if *expected_hash == block_hash => {}
-                _ => return Err(StatelessValidationError::FlatdbSparseTrieMismatch),
+                _ => {
+                    return Err(StatelessValidationError::FlatdbAncestorHashNotFound {
+                        block_number: block_num,
+                        got: block_hash,
+                        expected: ancestor_hashes.get(&block_num).copied(),
+                    })
+                }
             }
         }
     });
@@ -316,17 +349,25 @@ where
         for (expected_codehash, flatdb_code) in &flatdb_pre_state.contracts {
             let got_codehash = keccak256(flatdb_code.original_bytes());
             if got_codehash != *expected_codehash {
-                return Err(StatelessValidationError::FlatdbSparseTrieMismatch);
+                return Err(StatelessValidationError::FlatdbBytecodeHashMismatch {
+                    got: got_codehash,
+                    expected: *expected_codehash,
+                });
             }
         }
     });
 
     // Verify the trie witness so we have a cryptographically verified state to compare against.
     let (mut trie, _) =
-        track_cycles!("verify_trie_witness", T::new(&trie_witness, parent.state_root)?); // TODO: explain the Default()
+        track_cycles!("verify_trie_witness", T::new(&trie_witness, parent.state_root)?);
 
     // Verify that all accounts in flatdb pre-state match those in the trie witness.
     track_cycles!("verify_flatdb_state_against_trie", {
+        // For bytecodes we pass Default::default() since the WitnessDatabase won't be used for
+        // checking bytecode. We already did it above by checking that the flatdb bytecodes
+        // hashes match. If the flatdb accounts contains an account with a code_hash not
+        // present in the bytecode map, then the execution would have failed since
+        // the code would be missing.
         let mut db = WitnessDatabase::new(&trie, Default::default(), ancestor_hashes);
         for (address, flatdb_account) in flatdb_pre_state.accounts {
             let trie_account = db.basic(address).unwrap();
@@ -334,12 +375,13 @@ where
                 .then_some(flatdb_account.info);
 
             if trie_account != flatdb_account {
-                return Err(StatelessValidationError::FlatdbSparseTrieMismatch);
+                return Err(StatelessValidationError::FlatdbAccountStateMismatch { address });
             }
         }
     });
 
-    // Compute and check the post state root using the provided post-state from the execution using flatdb state.
+    // Compute and check the post state root using the provided post-state from the execution using
+    // flatdb state.
     track_cycles!("post_state_compute", {
         let state_root = trie.calculate_state_root(flatdb_post_state)?;
         if state_root != sealed_block.state_root {
@@ -358,7 +400,8 @@ where
 pub struct ExecutionContext {
     /// The current block being validated, with transaction signers recovered from signatures.
     pub block: RecoveredBlock<Block>,
-    /// The immediate parent header, containing the pre-state root required for witness verification.
+    /// The immediate parent header, containing the pre-state root required for witness
+    /// verification.
     pub parent: SealedHeader,
     /// Map of ancestor block numbers to their hashes, used for BLOCKHASH opcode lookups.
     /// Limited to 256 most recent blocks per EVM specification.
@@ -374,7 +417,6 @@ pub struct ExecutionContext {
 ///
 /// The ancestor headers must form a contiguous chain leading to `current_block`'s parent.
 /// At least one ancestor header (the parent) is required for pre-state root verification.
-///
 pub fn prepare_execution_context<ChainSpec>(
     current_block: Block,
     public_keys: Vec<UncompressedPublicKey>,

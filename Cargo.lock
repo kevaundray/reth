@@ -9893,12 +9893,17 @@ version = "1.8.2"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
+ "reth-db",
+ "reth-db-api",
  "reth-ethereum-forks",
+ "reth-node-types",
  "reth-primitives-traits",
+ "reth-provider",
  "reth-storage-api",
  "reth-storage-errors",
  "reth-trie",
  "revm",
+ "thiserror 2.0.16",
 ]
 
 [[package]]

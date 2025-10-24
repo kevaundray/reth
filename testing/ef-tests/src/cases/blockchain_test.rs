@@ -4,18 +4,12 @@ use crate::{
     models::{BlockchainTest, ForkSpec},
     Case, Error, Suite,
 };
-use alloy_consensus::Header;
-use reth_db_api::{
-    cursor::{DbCursorRO, DbDupCursorRO},
-    transaction::DbTx,
-};
 
-use alloy_primitives::{keccak256, U256};
+use alloy_primitives::{keccak256, map::HashMap, U256};
 use alloy_rlp::{Decodable, Encodable};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use reth_chainspec::ChainSpec;
 use reth_consensus::{Consensus, HeaderValidator};
-use reth_db::tables;
 use reth_db_common::init::{insert_genesis_hashes, insert_genesis_history, insert_genesis_state};
 use reth_ethereum_consensus::{validate_block_post_execution, EthBeaconConsensus};
 use reth_ethereum_primitives::{Block, TransactionSigned};
@@ -28,9 +22,8 @@ use reth_provider::{
     StateWriter, StaticFileProviderFactory, StaticFileSegment, StaticFileWriter,
 };
 use reth_revm::{
-    database::{EvmStateProvider, StateProviderDatabase},
-    db::{AccountStatus, Cache, DbAccount},
-    witness::ExecutionWitnessRecord,
+    database::StateProviderDatabase,
+    witness::{ExecutionWitnessRecord, FlatWitnessRecord},
     State,
 };
 use reth_stateless::{
@@ -44,7 +37,6 @@ use reth_stateless::{
 };
 use reth_trie::{HashedPostState, KeccakKeyHasher, StateRoot};
 use reth_trie_db::DatabaseStateRoot;
-use revm::state::Bytecode;
 use std::{
     collections::BTreeMap,
     fs,
@@ -87,12 +79,12 @@ impl BlockchainTestCase {
     const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
-            ForkSpec::ByzantiumToConstantinopleAt5
-                | ForkSpec::Constantinople
-                | ForkSpec::ConstantinopleFix
-                | ForkSpec::MergeEOF
-                | ForkSpec::MergeMeterInitCode
-                | ForkSpec::MergePush0
+            ForkSpec::ByzantiumToConstantinopleAt5 |
+                ForkSpec::Constantinople |
+                ForkSpec::ConstantinopleFix |
+                ForkSpec::MergeEOF |
+                ForkSpec::MergeMeterInitCode |
+                ForkSpec::MergePush0
         )
     }
 
@@ -125,7 +117,7 @@ impl BlockchainTestCase {
     pub fn run_single_case(
         name: &str,
         case: &BlockchainTest,
-    ) -> Result<Vec<(RecoveredBlock<Block>, ExecutionWitness)>, Error> {
+    ) -> Result<Vec<(RecoveredBlock<Block>, ExecutionWitness, FlatExecutionWitness)>, Error> {
         let expectation = Self::expected_failure(case);
         match run_case(case) {
             // All blocks executed successfully.
@@ -222,7 +214,7 @@ impl Case for BlockchainTestCase {
 ///   witness if the error is of variant `BlockProcessingFailed`.
 fn run_case(
     case: &BlockchainTest,
-) -> Result<Vec<(RecoveredBlock<Block>, ExecutionWitness)>, Error> {
+) -> Result<Vec<(RecoveredBlock<Block>, ExecutionWitness, FlatExecutionWitness)>, Error> {
     // Create a new test database and initialize a provider for the test case.
     let chain_spec: Arc<ChainSpec> = Arc::new(case.network.into());
     let factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
@@ -260,8 +252,8 @@ fn run_case(
 
     let executor_provider = EthEvmConfig::ethereum(chain_spec.clone());
     let mut parent = genesis_block;
-    let mut program_inputs = Vec::new();
-    let mut caches = Vec::new();
+    let mut program_inputs: Vec<(RecoveredBlock<Block>, ExecutionWitness, FlatExecutionWitness)> =
+        Vec::new();
 
     for (block_index, block) in blocks.iter().enumerate() {
         // Note: same as the comment on `decode_blocks` as to why we cannot use block.number
@@ -279,81 +271,24 @@ fn run_case(
 
         // Consensus checks before block execution
         pre_execution_checks(chain_spec.clone(), &parent, block).map_err(|err| {
-            program_inputs.push((block.clone(), execution_witness_with_parent(&parent)));
+            let (execution_witness, flatdb_execution_witness) =
+                execution_witness_with_parent(&parent);
+            program_inputs.push((block.clone(), execution_witness, flatdb_execution_witness));
             Error::block_failed(block_number, program_inputs.clone(), err)
         })?;
 
         let mut witness_record = ExecutionWitnessRecord::default();
+        let mut flat_witness_record = FlatWitnessRecord::default();
 
         // Execute the block
         let state_provider = provider.latest();
         let state_db = StateProviderDatabase(&state_provider);
         let executor = executor_provider.batch_executor(state_db);
 
-        let mut cache = Cache::default();
         let output = executor
             .execute_with_state_closure_always(&(*block).clone(), |statedb: &State<_>| {
                 witness_record.record_executed_state(statedb);
-
-                cache.contracts = statedb
-                    .cache
-                    .contracts
-                    .values()
-                    .map(|code| code.original_bytes())
-                    .chain(
-                        statedb.bundle_state.contracts.values().map(|code| code.original_bytes()),
-                    )
-                    .map(|code_bytes| (keccak256(&code_bytes), Bytecode::new_legacy(code_bytes)))
-                    .collect();
-
-                for (address, account) in &statedb.cache.accounts {
-                    let provider_account =
-                        state_provider.basic_account(address).expect("Get prestate account");
-
-                    let mut db_account = match provider_account {
-                        Some(account) => DbAccount {
-                            info: account.into(),
-                            account_state: Default::default(),
-                            storage: Default::default(),
-                        },
-                        None => DbAccount::new_not_existing(),
-                    };
-
-                    if let Some(account) = &account.account {
-                        for slot in account.storage.keys() {
-                            let val = state_provider
-                                .storage(*address, (*slot).into())
-                                .expect("Get prestate storage value")
-                                .unwrap_or_default();
-                            db_account.storage.insert(*slot, val);
-                        }
-                    }
-                    if account.status == AccountStatus::Destroyed {
-                        // Get the transaction reference
-                        let tx = provider.tx_ref();
-
-                        // PlainStorageState is a DupSort table, so use cursor_dup_read
-                        let mut storage_cursor =
-                            tx.cursor_dup_read::<tables::PlainStorageState>().unwrap();
-
-                        // Seek to the first storage entry for this address
-                        if let Some((_, first_entry)) = storage_cursor.seek_exact(*address).unwrap()
-                        {
-                            db_account
-                                .storage
-                                .insert(U256::from_be_bytes(first_entry.key.0), first_entry.value);
-
-                            // Iterate over remaining storage slots for this address
-                            while let Some((_, entry)) = storage_cursor.next_dup().unwrap() {
-                                db_account
-                                    .storage
-                                    .insert(U256::from_be_bytes(entry.key.0), entry.value);
-                            }
-                        }
-                    }
-
-                    cache.accounts.insert(*address, db_account);
-                }
+                flat_witness_record.record_executed_state(statedb, &provider).unwrap();
             })
             .map_err(|err| Error::block_failed(block_number, program_inputs.clone(), err))?;
 
@@ -386,17 +321,21 @@ fn run_case(
             })
             .collect();
 
-        cache.block_hashes = exec_witness
+        flat_witness_record.block_hashes = exec_witness
             .headers
             .iter()
             .zip(range)
             .map(|(bytes, num)| (U256::from(num), keccak256(bytes)))
             .collect();
 
-        // println!("Cache: {cache:#?}");
+        let flat_witness = FlatExecutionWitness::new(
+            flat_witness_record.accounts,
+            flat_witness_record.contracts,
+            flat_witness_record.block_hashes,
+            parent.header().clone(),
+        );
 
-        program_inputs.push((block.clone(), exec_witness));
-        caches.push(cache);
+        program_inputs.push((block.clone(), exec_witness, flat_witness));
 
         // Compute and check the post state root
         let hashed_state =
@@ -450,7 +389,7 @@ fn run_case(
     }
 
     // Now validate using the stateless client if everything else passes
-    for ((recovered_block, execution_witness), cache) in program_inputs.iter().zip(caches) {
+    for (recovered_block, execution_witness, flatdb_witness) in program_inputs.iter() {
         let block = recovered_block.clone().into_block();
 
         // Recover the actual public keys from the transaction signatures
@@ -467,11 +406,7 @@ fn run_case(
         )
         .expect("stateless validation failed");
 
-        let parent_header =
-            alloy_rlp::decode_exact::<Header>(execution_witness.headers.last().unwrap().clone())
-                .unwrap();
-        let flatdb_witness = FlatExecutionWitness { state: cache, parent_header }; // TODO: clone
-                                                                                   // Validate stateless execution using a flatdb for the storage access.
+        // Validate stateless execution using a flatdb for the storage access.
         let (_, flatdb_post_state) = stateless_validation_with_flatdb::<_, _>(
             block.clone(),
             public_keys.clone(),
@@ -495,7 +430,7 @@ fn run_case(
         stateless_validation_flatdb_storage_check::<StatelessSparseTrie>(
             block,
             execution_witness.clone(),
-            flatdb_witness.state,
+            flatdb_witness.state.clone(),
             flatdb_post_state,
         )
         .expect("stateless flatdb state check failed");
@@ -635,8 +570,20 @@ fn path_contains(path_str: &str, rhs: &[&str]) -> bool {
     path_str.contains(&rhs)
 }
 
-fn execution_witness_with_parent(parent: &RecoveredBlock<Block>) -> ExecutionWitness {
+fn execution_witness_with_parent(
+    parent: &RecoveredBlock<Block>,
+) -> (ExecutionWitness, FlatExecutionWitness) {
     let mut serialized_header = Vec::new();
     parent.header().encode(&mut serialized_header);
-    ExecutionWitness { headers: vec![serialized_header.into()], ..Default::default() }
+    let execution_witness =
+        ExecutionWitness { headers: vec![serialized_header.into()], ..Default::default() };
+    // let mut block_hashes = alloy_primitives::map::HashMap::default();
+    // block_hashes.insert(U256::from(parent.number), parent.hash());
+    let flatdb_witness = FlatExecutionWitness::new(
+        Default::default(),
+        Default::default(),
+        HashMap::from_iter([(U256::from(parent.number), parent.hash())]),
+        parent.header().clone(),
+    );
+    (execution_witness, flatdb_witness)
 }

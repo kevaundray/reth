@@ -5,7 +5,7 @@ use reth_db::DatabaseError;
 use reth_ethereum_primitives::Block;
 use reth_primitives_traits::RecoveredBlock;
 use reth_provider::ProviderError;
-use reth_stateless::ExecutionWitness;
+use reth_stateless::{flat_execution_witness::FlatExecutionWitness, ExecutionWitness};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -29,7 +29,8 @@ pub enum Error {
         block_number: u64,
         /// Contains the inputs necessary for the block stateless validation guest program used in
         /// zkVMs to prove the block is invalid.
-        partial_program_inputs: Vec<(RecoveredBlock<Block>, ExecutionWitness)>,
+        partial_program_inputs:
+            Vec<(RecoveredBlock<Block>, ExecutionWitness, FlatExecutionWitness)>,
         /// The specific error
         #[source]
         err: Box<dyn std::error::Error + Send + Sync>,
@@ -73,7 +74,11 @@ impl Error {
     /// Create a new [`Error::BlockProcessingFailed`] error.
     pub fn block_failed(
         block_number: u64,
-        partial_program_inputs: Vec<(RecoveredBlock<Block>, ExecutionWitness)>,
+        partial_program_inputs: Vec<(
+            RecoveredBlock<Block>,
+            ExecutionWitness,
+            FlatExecutionWitness,
+        )>,
         err: impl std::error::Error + Send + Sync + 'static,
     ) -> Self {
         Self::BlockProcessingFailed { block_number, partial_program_inputs, err: Box::new(err) }
