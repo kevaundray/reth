@@ -22,7 +22,7 @@ use reth_revm::{
 };
 
 /// A flat execution witness containing the state and context needed for stateless block execution.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct FlatExecutionWitness {
     /// The state required for executing the block.
     pub state: Cache,
