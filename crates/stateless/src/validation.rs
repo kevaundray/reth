@@ -1,5 +1,5 @@
 use crate::{
-    flat_execution_witness::FlatExecutionWitness,
+    flat_witness::FlatExecutionWitness,
     recover_block::{recover_block_with_public_keys, UncompressedPublicKey},
     track_cycles,
     trie::{StatelessSparseTrie, StatelessTrie},

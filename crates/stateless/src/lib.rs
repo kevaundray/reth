@@ -39,7 +39,7 @@ mod recover_block;
 /// Sparse trie implementation for stateless validation
 pub mod trie;
 
-pub mod flat_execution_witness;
+pub mod flat_witness;
 
 use alloy_genesis::ChainConfig;
 #[doc(inline)]
@@ -60,7 +60,7 @@ pub use alloy_rpc_types_debug::ExecutionWitness;
 
 use reth_ethereum_primitives::Block;
 
-use crate::flat_execution_witness::FlatExecutionWitness;
+use crate::flat_witness::FlatExecutionWitness;
 
 /// `StatelessInput` is a convenience structure for serializing the input needed
 /// for the stateless validation function.

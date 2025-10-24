@@ -8,6 +8,8 @@
 
 use core::error;
 
+pub mod bincode;
+
 use alloc::fmt;
 use alloy_primitives::{
     map::{HashMap, HashSet},
@@ -20,11 +22,14 @@ use reth_revm::{
     state::{AccountInfo, Bytecode},
     DatabaseRef,
 };
+use serde_with::serde_as;
 
 /// A flat execution witness containing the state and context needed for stateless block execution.
+#[serde_with::serde_as]
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct FlatExecutionWitness {
     /// The state required for executing the block.
+    #[serde_as(as = "bincode::CacheBincode")]
     pub state: Cache,
     /// The parent block header required for pre-execution validations.
     pub parent_header: Header,
