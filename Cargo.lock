@@ -9895,7 +9895,6 @@ dependencies = [
  "alloy-primitives",
  "reth-db",
  "reth-ethereum-forks",
- "reth-node-types",
  "reth-primitives-traits",
  "reth-provider",
  "reth-storage-api",

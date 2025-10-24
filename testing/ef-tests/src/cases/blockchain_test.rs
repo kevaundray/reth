@@ -27,7 +27,7 @@ use reth_revm::{
     State,
 };
 use reth_stateless::{
-    flat_execution_witness::FlatExecutionWitness,
+    flat_witness::FlatExecutionWitness,
     trie::StatelessSparseTrie,
     validation::{
         stateless_validation_flatdb_storage_check, stateless_validation_with_flatdb,
@@ -79,12 +79,12 @@ impl BlockchainTestCase {
     const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
-            ForkSpec::ByzantiumToConstantinopleAt5 |
-                ForkSpec::Constantinople |
-                ForkSpec::ConstantinopleFix |
-                ForkSpec::MergeEOF |
-                ForkSpec::MergeMeterInitCode |
-                ForkSpec::MergePush0
+            ForkSpec::ByzantiumToConstantinopleAt5
+                | ForkSpec::Constantinople
+                | ForkSpec::ConstantinopleFix
+                | ForkSpec::MergeEOF
+                | ForkSpec::MergeMeterInitCode
+                | ForkSpec::MergePush0
         )
     }
 
