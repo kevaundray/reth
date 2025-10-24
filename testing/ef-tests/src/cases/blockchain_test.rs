@@ -79,12 +79,12 @@ impl BlockchainTestCase {
     const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
-            ForkSpec::ByzantiumToConstantinopleAt5 |
-                ForkSpec::Constantinople |
-                ForkSpec::ConstantinopleFix |
-                ForkSpec::MergeEOF |
-                ForkSpec::MergeMeterInitCode |
-                ForkSpec::MergePush0
+            ForkSpec::ByzantiumToConstantinopleAt5
+                | ForkSpec::Constantinople
+                | ForkSpec::ConstantinopleFix
+                | ForkSpec::MergeEOF
+                | ForkSpec::MergeMeterInitCode
+                | ForkSpec::MergePush0
         )
     }
 
@@ -389,7 +389,7 @@ fn run_case(
     }
 
     // Now validate using the stateless client if everything else passes
-    for (recovered_block, execution_witness, flatdb_witness) in program_inputs.iter() {
+    for (recovered_block, execution_witness, flatdb_witness) in &program_inputs {
         let block = recovered_block.clone().into_block();
 
         // Recover the actual public keys from the transaction signatures

@@ -15,7 +15,7 @@ use reth_revm::{
     db::{Cache, CacheDB, DBErrorMarker, DbAccount},
     primitives::StorageKey,
     state::{AccountInfo, Bytecode},
-    Database,
+    Database, DatabaseRef,
 };
 
 /// A flat execution witness containing the state and context needed for stateless block execution.
@@ -45,8 +45,8 @@ impl FlatExecutionWitness {
     ///
     /// Returns a `CacheDB` backed by `FailingDB`, which ensures all state must come from the
     /// cache. Any cache miss results in an error, enforcing stateless execution constraints.
-    pub fn create_db(&self) -> CacheDB<FailingDB> {
-        CacheDB { cache: self.state.clone(), db: FailingDB }
+    pub fn create_db(self) -> CacheDB<reth_revm::db::EmptyDB> {
+        CacheDB { cache: self.state, db: Default::default() }
     }
 }
 
@@ -92,6 +92,30 @@ impl Database for FailingDB {
     }
 
     fn block_hash(&mut self, _number: u64) -> Result<B256, Self::Error> {
+        Err(AlwaysFailError)
+    }
+}
+
+impl DatabaseRef for FailingDB {
+    type Error = AlwaysFailError;
+
+    fn basic_ref(&self, _address: Address) -> Result<Option<AccountInfo>, Self::Error> {
+        Err(AlwaysFailError)
+    }
+
+    fn code_by_hash_ref(&self, _code_hash: B256) -> Result<Bytecode, Self::Error> {
+        Err(AlwaysFailError)
+    }
+
+    fn storage_ref(
+        &self,
+        _address: Address,
+        _index: StorageKey,
+    ) -> Result<StorageValue, Self::Error> {
+        Err(AlwaysFailError)
+    }
+
+    fn block_hash_ref(&self, _number: u64) -> Result<B256, Self::Error> {
         Err(AlwaysFailError)
     }
 }

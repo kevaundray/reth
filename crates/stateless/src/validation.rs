@@ -23,7 +23,7 @@ use reth_ethereum_primitives::{Block, EthPrimitives};
 use reth_evm::{execute::Executor, ConfigureEvm};
 use reth_primitives_traits::{RecoveredBlock, SealedBlock, SealedHeader};
 use reth_revm::{
-    db::{AccountState, Cache, InMemoryDB},
+    db::{AccountState, Cache},
     Database,
 };
 use reth_trie_common::{HashedPostState, KeccakKeyHasher};
@@ -138,6 +138,10 @@ pub enum StatelessValidationError {
         /// The address of the account with mismatched state.
         address: alloy_primitives::Address,
     },
+
+    /// Error getting account from the witness database.
+    #[error("getting account from witness database")]
+    GetAccountFromWitnessDatabase,
 }
 
 /// Performs stateless validation of a block using the provided witness data.
@@ -257,13 +261,12 @@ where
     E: ConfigureEvm<Primitives = EthPrimitives> + Clone + 'static,
 {
     let recovered_block = recover_block_with_public_keys(current_block, public_keys, &*chain_spec)?;
-
-    // TODO: use safer ExtDB, and use ignored `_` ancestor_hashes
-    let db = InMemoryDB { cache: witness.state, db: Default::default() };
+    let parent_header = SealedHeader::seal_slow(witness.parent_header.clone());
+    let db = witness.create_db();
 
     let hashed_post_state = stateless_validation_execution(
         &recovered_block,
-        &SealedHeader::seal_slow(witness.parent_header),
+        &parent_header,
         chain_spec,
         evm_config,
         db,
@@ -370,7 +373,9 @@ where
         // the code would be missing.
         let mut db = WitnessDatabase::new(&trie, Default::default(), ancestor_hashes);
         for (address, flatdb_account) in flatdb_pre_state.accounts {
-            let trie_account = db.basic(address).unwrap();
+            let trie_account = db
+                .basic(address)
+                .map_err(|_| StatelessValidationError::GetAccountFromWitnessDatabase)?;
             let flatdb_account = (flatdb_account.account_state != AccountState::NotExisting)
                 .then_some(flatdb_account.info);
 

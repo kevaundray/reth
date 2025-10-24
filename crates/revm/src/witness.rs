@@ -130,7 +130,6 @@ impl FlatWitnessRecord {
             .contracts
             .values()
             .map(|code| code.original_bytes())
-            .chain(statedb.bundle_state.contracts.values().map(|code| code.original_bytes()))
             .map(|code_bytes| (keccak256(&code_bytes), Bytecode::new_legacy(code_bytes)))
             .collect();
 
