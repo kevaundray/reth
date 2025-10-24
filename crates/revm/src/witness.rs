@@ -9,7 +9,7 @@ use reth_provider::{providers::NodeTypesForProvider, DatabaseProvider};
 use reth_trie::{HashedPostState, HashedStorage};
 use revm::{
     database::{AccountStatus, DbAccount, State},
-    primitives::HashMap,
+    primitives::{HashMap, HashSet},
     state::Bytecode,
 };
 
@@ -112,6 +112,8 @@ pub struct FlatWitnessRecord {
     pub contracts: HashMap<B256, Bytecode>,
     /// Ancestor block hashes required by BLOCKHASH.
     pub block_hashes: HashMap<U256, B256>,
+    /// The set of addresses that have been self-destructed in the execution.
+    pub destructed_addresses: HashSet<Address>,
 }
 
 impl FlatWitnessRecord {
@@ -166,6 +168,7 @@ impl FlatWitnessRecord {
                         db_account.storage.insert(U256::from_be_bytes(entry.key.0), entry.value);
                     }
                 }
+                self.destructed_addresses.insert(*address);
             }
 
             self.accounts.insert(*address, db_account);

@@ -9,13 +9,16 @@
 use core::error;
 
 use alloc::fmt;
-use alloy_primitives::{map::HashMap, Address, StorageValue, B256, U256};
+use alloy_primitives::{
+    map::{HashMap, HashSet},
+    Address, StorageValue, B256, U256,
+};
 use reth_primitives_traits::Header;
 use reth_revm::{
     db::{Cache, CacheDB, DBErrorMarker, DbAccount},
     primitives::StorageKey,
     state::{AccountInfo, Bytecode},
-    Database, DatabaseRef,
+    DatabaseRef,
 };
 
 /// A flat execution witness containing the state and context needed for stateless block execution.
@@ -25,6 +28,8 @@ pub struct FlatExecutionWitness {
     pub state: Cache,
     /// The parent block header required for pre-execution validations.
     pub parent_header: Header,
+    /// The set of addresses that have been self-destructed in the execution.
+    pub destructed_addresses: HashSet<Address>,
 }
 
 impl FlatExecutionWitness {
@@ -33,10 +38,12 @@ impl FlatExecutionWitness {
         accounts: HashMap<Address, DbAccount>,
         contracts: HashMap<B256, Bytecode>,
         block_hashes: HashMap<U256, B256>,
+        destructed_addresses: HashSet<Address>,
         parent_header: Header,
     ) -> Self {
         Self {
             state: Cache { accounts, contracts, block_hashes, ..Default::default() },
+            destructed_addresses,
             parent_header,
         }
     }
@@ -45,66 +52,63 @@ impl FlatExecutionWitness {
     ///
     /// Returns a `CacheDB` backed by `FailingDB`, which ensures all state must come from the
     /// cache. Any cache miss results in an error, enforcing stateless execution constraints.
-    pub fn create_db(self) -> CacheDB<reth_revm::db::EmptyDB> {
-        CacheDB { cache: self.state, db: Default::default() }
+    // pub fn create_db(self) -> CacheDB<reth_revm::db::EmptyDB> {
+    pub fn create_db(self) -> CacheDB<SelfDestructCompatibleFailingDB> {
+        CacheDB {
+            cache: self.state,
+            db: SelfDestructCompatibleFailingDB::new(self.destructed_addresses),
+        }
     }
 }
 
-/// Error type that always indicates database operation failure.
+/// Database backend that fails on all accesses except storage reads from self-destructed accounts.
 ///
-/// Used by `FailingDB` to signal that state access attempted to reach beyond the witness cache.
-/// In stateless execution, all required state must be present in the witness - cache misses
-/// indicate incomplete witness data. This is critical since if we don't do this the execution
-/// could access state that isn't cryptographically verified against the trie witness.
-#[derive(Debug)]
-pub struct AlwaysFailError;
+/// This enforces that all state accesses during execution must be present in the cache. Cache misses
+/// indicate missing witness data and must fail, since only cached accesses are cryptographically verified
+/// against the trie witness proof. Returning default values would bypass verification.
+///
+/// **Exception: Self-destructed account storage**
+///
+/// Storage reads from self-destructed accounts return zero (`Default::default()`) on cache miss.
+/// This is safe because the trie witness includes complete storage tries for self-destructed accounts,
+/// not just accessed slots—allowing any non-existent slot to be proven as zero. This behavior matches
+/// the witness generation in `TrieWitness::get_proof_targets` and compensates for `StateDB` not tracking
+/// individual storage accesses of self-destructed accounts.
+///
+#[derive(Debug, Clone)]
+pub struct SelfDestructCompatibleFailingDB {
+    destructed_addresses: HashSet<Address>,
+}
 
-impl fmt::Display for AlwaysFailError {
+impl SelfDestructCompatibleFailingDB {
+    /// Creates a new instance with the given set of self-destructed addresses.
+    pub const fn new(destructed_addresses: HashSet<Address>) -> Self {
+        Self { destructed_addresses }
+    }
+}
+
+/// Error indicating that a database access was attempted outside the captured state.
+#[derive(Debug)]
+pub struct NonCapturedStateError;
+
+impl fmt::Display for NonCapturedStateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Database access not allowed in stateless execution context")
     }
 }
 
-impl error::Error for AlwaysFailError {}
-impl DBErrorMarker for AlwaysFailError {}
+impl error::Error for NonCapturedStateError {}
+impl DBErrorMarker for NonCapturedStateError {}
 
-/// Database implementation that fails all operations.
-#[derive(Debug)]
-pub struct FailingDB;
-
-impl Database for FailingDB {
-    type Error = AlwaysFailError;
-
-    fn basic(&mut self, _address: Address) -> Result<Option<AccountInfo>, Self::Error> {
-        Err(AlwaysFailError)
-    }
-
-    fn code_by_hash(&mut self, _code_hash: B256) -> Result<Bytecode, Self::Error> {
-        Err(AlwaysFailError)
-    }
-
-    fn storage(
-        &mut self,
-        _address: Address,
-        _index: StorageKey,
-    ) -> Result<StorageValue, Self::Error> {
-        Err(AlwaysFailError)
-    }
-
-    fn block_hash(&mut self, _number: u64) -> Result<B256, Self::Error> {
-        Err(AlwaysFailError)
-    }
-}
-
-impl DatabaseRef for FailingDB {
-    type Error = AlwaysFailError;
+impl DatabaseRef for SelfDestructCompatibleFailingDB {
+    type Error = NonCapturedStateError;
 
     fn basic_ref(&self, _address: Address) -> Result<Option<AccountInfo>, Self::Error> {
-        Err(AlwaysFailError)
+        Err(NonCapturedStateError)
     }
 
     fn code_by_hash_ref(&self, _code_hash: B256) -> Result<Bytecode, Self::Error> {
-        Err(AlwaysFailError)
+        Err(NonCapturedStateError)
     }
 
     fn storage_ref(
@@ -112,10 +116,13 @@ impl DatabaseRef for FailingDB {
         _address: Address,
         _index: StorageKey,
     ) -> Result<StorageValue, Self::Error> {
-        Err(AlwaysFailError)
+        if self.destructed_addresses.contains(&_address) {
+            return Ok(Default::default());
+        }
+        Err(NonCapturedStateError)
     }
 
     fn block_hash_ref(&self, _number: u64) -> Result<B256, Self::Error> {
-        Err(AlwaysFailError)
+        Err(NonCapturedStateError)
     }
 }

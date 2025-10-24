@@ -332,6 +332,7 @@ fn run_case(
             flat_witness_record.accounts,
             flat_witness_record.contracts,
             flat_witness_record.block_hashes,
+            flat_witness_record.destructed_addresses,
             parent.header().clone(),
         );
 
@@ -583,6 +584,7 @@ fn execution_witness_with_parent(
         Default::default(),
         Default::default(),
         HashMap::from_iter([(U256::from(parent.number), parent.hash())]),
+        Default::default(),
         parent.header().clone(),
     );
     (execution_witness, flatdb_witness)
