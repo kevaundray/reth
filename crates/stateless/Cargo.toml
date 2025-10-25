@@ -29,7 +29,7 @@ reth-ethereum-primitives = { workspace = true, features = [
 ] }
 reth-errors.workspace = true
 reth-evm.workspace = true
-reth-revm.workspace = true
+reth-revm = { workspace = true, features = ["serde"] }
 reth-trie-common.workspace = true
 reth-trie-sparse.workspace = true
 reth-chainspec.workspace = true
