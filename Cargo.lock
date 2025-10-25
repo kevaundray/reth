@@ -9769,6 +9769,7 @@ dependencies = [
  "reth-node-types",
  "reth-primitives-traits",
  "reth-prune-types",
+ "reth-revm",
  "reth-stages-types",
  "reth-static-file-types",
  "reth-storage-api",
@@ -9781,6 +9782,7 @@ dependencies = [
  "revm-state",
  "strum 0.27.2",
  "tempfile",
+ "thiserror 2.0.16",
  "tokio",
  "tracing",
 ]
@@ -9893,15 +9895,12 @@ version = "1.8.2"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
- "reth-db",
  "reth-ethereum-forks",
  "reth-primitives-traits",
- "reth-provider",
  "reth-storage-api",
  "reth-storage-errors",
  "reth-trie",
  "revm",
- "thiserror 2.0.16",
 ]
 
 [[package]]

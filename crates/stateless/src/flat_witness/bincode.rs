@@ -1,10 +1,10 @@
 #![allow(missing_docs)]
 
-use alloy_primitives::{map::HashMap, B256, U256};
-use alloy_primitives::{Address, Bytes};
-use reth_revm::db::Cache;
-use reth_revm::db::DbAccount;
-use reth_revm::state::Bytecode;
+use alloy_primitives::{map::HashMap, Address, Bytes, B256, U256};
+use reth_revm::{
+    db::{Cache, DbAccount},
+    state::Bytecode,
+};
 use serde_with::{DeserializeAs, SerializeAs};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

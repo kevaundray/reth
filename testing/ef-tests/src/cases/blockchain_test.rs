@@ -17,9 +17,10 @@ use reth_evm::{execute::Executor, ConfigureEvm};
 use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives_traits::{Block as BlockTrait, RecoveredBlock, SealedBlock};
 use reth_provider::{
-    test_utils::create_test_provider_factory_with_chain_spec, BlockWriter, DatabaseProviderFactory,
-    ExecutionOutcome, HeaderProvider, HistoryWriter, OriginalValuesKnown, StateProofProvider,
-    StateWriter, StaticFileProviderFactory, StaticFileSegment, StaticFileWriter,
+    test_utils::create_test_provider_factory_with_chain_spec, witness::RecordFlatWitness,
+    BlockWriter, DatabaseProviderFactory, ExecutionOutcome, HeaderProvider, HistoryWriter,
+    OriginalValuesKnown, StateProofProvider, StateWriter, StaticFileProviderFactory,
+    StaticFileSegment, StaticFileWriter,
 };
 use reth_revm::{
     database::StateProviderDatabase,
@@ -79,12 +80,12 @@ impl BlockchainTestCase {
     const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
-            ForkSpec::ByzantiumToConstantinopleAt5
-                | ForkSpec::Constantinople
-                | ForkSpec::ConstantinopleFix
-                | ForkSpec::MergeEOF
-                | ForkSpec::MergeMeterInitCode
-                | ForkSpec::MergePush0
+            ForkSpec::ByzantiumToConstantinopleAt5 |
+                ForkSpec::Constantinople |
+                ForkSpec::ConstantinopleFix |
+                ForkSpec::MergeEOF |
+                ForkSpec::MergeMeterInitCode |
+                ForkSpec::MergePush0
         )
     }
 
@@ -294,7 +295,7 @@ fn run_case(
         let output = executor
             .execute_with_state_closure_always(&(*block).clone(), |statedb: &State<_>| {
                 witness_record.record_executed_state(statedb);
-                flat_witness_record.record_executed_state(statedb, &provider).unwrap();
+                provider.record_flat_witness(statedb, &mut flat_witness_record).unwrap();
             })
             .map_err(|err| Error::block_failed(block_number, program_inputs.clone(), err))?;
 

@@ -43,6 +43,9 @@ pub use revm_database::states::OriginalValuesKnown;
 /// Writer standalone type.
 pub mod writer;
 
+/// Witness recording utilities.
+pub mod witness;
+
 pub use reth_chain_state::{
     CanonStateNotification, CanonStateNotificationSender, CanonStateNotificationStream,
     CanonStateNotifications, CanonStateSubscriptions,
