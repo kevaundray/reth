@@ -172,11 +172,12 @@ impl<Provider: DBProvider + BlockHashReader + Sync> StateProofProvider
 
             match account {
                 AccessedAccount::Destroyed => {
-                    // When an account is destroyed, statedb discards all storage slots, losing track of
-                    // which slots were accessed pre-destruction. We fetch all storage slots for destroyed
-                    // accounts (mirroring TrieWitness::get_proof_targets in trie/trie/src/witness.rs),
-                    // requiring a lower-level db cursor. Only relevant pre-Cancun where SELFDESTRUCT clears
-                    // storage.
+                    // When an account is destroyed, statedb discards all storage slots, losing
+                    // track of which slots were accessed pre-destruction. We
+                    // fetch all storage slots for destroyed accounts (mirroring
+                    // TrieWitness::get_proof_targets in trie/trie/src/witness.rs),
+                    // requiring a lower-level db cursor. Only relevant pre-Cancun where
+                    // SELFDESTRUCT clears storage.
                     let tx = self.tx();
                     let mut storage_cursor = tx.cursor_dup_read::<tables::PlainStorageState>()?;
                     if let Some((_, first_entry)) = storage_cursor.seek_exact(*address)? {
@@ -223,8 +224,8 @@ impl<Provider: DBProvider + BlockHashReader> StateProvider
         storage_key: StorageKey,
     ) -> ProviderResult<Option<StorageValue>> {
         let mut cursor = self.tx().cursor_dup_read::<tables::PlainStorageState>()?;
-        if let Some(entry) = cursor.seek_by_key_subkey(account, storage_key)?
-            && entry.key == storage_key
+        if let Some(entry) = cursor.seek_by_key_subkey(account, storage_key)? &&
+            entry.key == storage_key
         {
             return Ok(Some(entry.value));
         }
