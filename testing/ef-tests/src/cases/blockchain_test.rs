@@ -573,8 +573,6 @@ fn execution_witness_with_parent(parent: &RecoveredBlock<Block>) -> ExecutionWit
     parent.header().encode(&mut serialized_header);
     let trie_witness =
         ExecutionWitness { headers: vec![serialized_header.into()], ..Default::default() };
-    // let mut block_hashes = alloy_primitives::map::HashMap::default();
-    // block_hashes.insert(U256::from(parent.number), parent.hash());
     let flatdb_witness = FlatExecutionWitness::new(
         Default::default(),
         HashMap::from_iter([(U256::from(parent.number), parent.hash())]),
