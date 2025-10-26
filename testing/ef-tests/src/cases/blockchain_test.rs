@@ -5,7 +5,7 @@ use crate::{
     Case, Error, Suite,
 };
 
-use alloy_primitives::{keccak256, map::HashMap, U256};
+use alloy_primitives::{keccak256, map::HashMap, B256, U256};
 use alloy_rlp::{Decodable, Encodable};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use reth_chainspec::ChainSpec;
@@ -80,12 +80,12 @@ impl BlockchainTestCase {
     const fn excluded_fork(network: ForkSpec) -> bool {
         matches!(
             network,
-            ForkSpec::ByzantiumToConstantinopleAt5 |
-                ForkSpec::Constantinople |
-                ForkSpec::ConstantinopleFix |
-                ForkSpec::MergeEOF |
-                ForkSpec::MergeMeterInitCode |
-                ForkSpec::MergePush0
+            ForkSpec::ByzantiumToConstantinopleAt5
+                | ForkSpec::Constantinople
+                | ForkSpec::ConstantinopleFix
+                | ForkSpec::MergeEOF
+                | ForkSpec::MergeMeterInitCode
+                | ForkSpec::MergePush0
         )
     }
 
@@ -295,7 +295,7 @@ fn run_case(
         let output = executor
             .execute_with_state_closure_always(&(*block).clone(), |statedb: &State<_>| {
                 witness_record.record_executed_state(statedb);
-                provider.record_flat_witness(statedb, &mut flat_witness_record).unwrap();
+                flat_witness_record.record_executed_state(statedb);
             })
             .map_err(|err| Error::block_failed(block_number, program_inputs.clone(), err))?;
 
@@ -328,20 +328,15 @@ fn run_case(
             })
             .collect();
 
-        flat_witness_record.block_hashes = exec_witness
+        let flat_prestate = provider.flat_witness(flat_witness_record).unwrap(); // TODO
+        let block_hashes: HashMap<U256, B256> = exec_witness
             .headers
             .iter()
             .zip(range)
             .map(|(bytes, num)| (U256::from(num), keccak256(bytes)))
             .collect();
-
-        let flat_witness = FlatExecutionWitness::new(
-            flat_witness_record.accounts,
-            flat_witness_record.contracts,
-            flat_witness_record.block_hashes,
-            flat_witness_record.destructed_addresses,
-            parent.header().clone(),
-        );
+        let flat_witness =
+            FlatExecutionWitness::new(flat_prestate, block_hashes, parent.header().clone());
 
         program_inputs
             .push((block.clone(), ExecutionWitnesses { trie: exec_witness, flatdb: flat_witness }));
@@ -586,9 +581,7 @@ fn execution_witness_with_parent(parent: &RecoveredBlock<Block>) -> ExecutionWit
     // block_hashes.insert(U256::from(parent.number), parent.hash());
     let flatdb_witness = FlatExecutionWitness::new(
         Default::default(),
-        Default::default(),
         HashMap::from_iter([(U256::from(parent.number), parent.hash())]),
-        Default::default(),
         parent.header().clone(),
     );
     ExecutionWitnesses { trie: trie_witness, flatdb: flatdb_witness }

@@ -24,6 +24,17 @@ use reth_revm::{
 };
 use serde_with::serde_as;
 
+/// Records pre-state data for witness generation.
+#[derive(Debug, Clone, Default)]
+pub struct FlatPreState {
+    /// Accounts accessed during execution.
+    pub accounts: HashMap<Address, DbAccount>,
+    /// Bytecode accessed during execution.
+    pub contracts: HashMap<B256, Bytecode>,
+    /// The set of addresses that have been self-destructed in the execution.
+    pub destructed_addresses: HashSet<Address>,
+}
+
 /// A flat execution witness containing the state and context needed for stateless block execution.
 #[serde_with::serde_as]
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -40,15 +51,18 @@ pub struct FlatExecutionWitness {
 impl FlatExecutionWitness {
     /// Creates a new flat execution witness from state components.
     pub fn new(
-        accounts: HashMap<Address, DbAccount>,
-        contracts: HashMap<B256, Bytecode>,
+        pre_state: FlatPreState,
         block_hashes: HashMap<U256, B256>,
-        destructed_addresses: HashSet<Address>,
         parent_header: Header,
     ) -> Self {
         Self {
-            state: Cache { accounts, contracts, block_hashes, ..Default::default() },
-            destructed_addresses,
+            state: Cache {
+                accounts: pre_state.accounts,
+                contracts: pre_state.contracts,
+                block_hashes,
+                logs: Default::default(),
+            },
+            destructed_addresses: pre_state.destructed_addresses,
             parent_header,
         }
     }
