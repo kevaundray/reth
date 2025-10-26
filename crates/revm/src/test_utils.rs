@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 use alloy_primitives::{
     keccak256, map::HashMap, Address, BlockNumber, Bytes, StorageKey, B256, U256,
 };
+use reth_execution_types::{FlatPreState, FlatWitnessRecord};
 use reth_primitives_traits::{Account, Bytecode};
 use reth_storage_api::{
     AccountReader, BlockHashReader, BytecodeReader, HashedPostStateProvider, StateProofProvider,
@@ -141,6 +142,10 @@ impl StateProofProvider for StateProviderTest {
 
     fn witness(&self, _input: TrieInput, _target: HashedPostState) -> ProviderResult<Vec<Bytes>> {
         unimplemented!("witness generation is not supported")
+    }
+
+    fn flat_witness(&self, record: FlatWitnessRecord) -> ProviderResult<FlatPreState> {
+        unimplemented!("flat witness generation is not supported")
     }
 }
 

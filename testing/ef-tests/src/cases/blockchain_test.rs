@@ -17,16 +17,12 @@ use reth_evm::{execute::Executor, ConfigureEvm};
 use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives_traits::{Block as BlockTrait, RecoveredBlock, SealedBlock};
 use reth_provider::{
-    test_utils::create_test_provider_factory_with_chain_spec, witness::RecordFlatWitness,
-    BlockWriter, DatabaseProviderFactory, ExecutionOutcome, HeaderProvider, HistoryWriter,
-    OriginalValuesKnown, StateProofProvider, StateWriter, StaticFileProviderFactory,
-    StaticFileSegment, StaticFileWriter,
+    test_utils::create_test_provider_factory_with_chain_spec, BlockWriter, DatabaseProviderFactory,
+    ExecutionOutcome, FlatWitnessRecord, HeaderProvider, HistoryWriter, OriginalValuesKnown,
+    StateProofProvider, StateWriter, StaticFileProviderFactory, StaticFileSegment,
+    StaticFileWriter,
 };
-use reth_revm::{
-    database::StateProviderDatabase,
-    witness::{ExecutionWitnessRecord, FlatWitnessRecord},
-    State,
-};
+use reth_revm::{database::StateProviderDatabase, witness::ExecutionWitnessRecord, State};
 use reth_stateless::{
     flat_witness::FlatExecutionWitness,
     trie::StatelessSparseTrie,
@@ -328,7 +324,7 @@ fn run_case(
             })
             .collect();
 
-        let flat_prestate = provider.flat_witness(flat_witness_record).unwrap(); // TODO
+        let flat_prestate = state_provider.flat_witness(flat_witness_record).unwrap();
         let block_hashes: HashMap<U256, B256> = exec_witness
             .headers
             .iter()

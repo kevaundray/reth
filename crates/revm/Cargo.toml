@@ -17,6 +17,7 @@ reth-primitives-traits.workspace = true
 reth-storage-errors.workspace = true
 reth-storage-api.workspace = true
 reth-trie = { workspace = true, optional = true }
+reth-execution-types.workspace = true
 
 # alloy
 alloy-primitives.workspace = true

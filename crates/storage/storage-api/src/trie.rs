@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 use alloy_primitives::{Address, BlockNumber, Bytes, B256};
+use reth_execution_types::{FlatPreState, FlatWitnessRecord};
 use reth_storage_errors::provider::ProviderResult;
 use reth_trie_common::{
     updates::{StorageTrieUpdatesSorted, TrieUpdates, TrieUpdatesSorted},
@@ -87,6 +88,9 @@ pub trait StateProofProvider: Send + Sync {
 
     /// Get trie witness for provided state.
     fn witness(&self, input: TrieInput, target: HashedPostState) -> ProviderResult<Vec<Bytes>>;
+
+    /// Get pre-state for state touched during execution.
+    fn flat_witness(&self, record: FlatWitnessRecord) -> ProviderResult<FlatPreState>;
 }
 
 /// Trie Reader

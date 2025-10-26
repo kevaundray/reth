@@ -15,25 +15,15 @@ use alloy_primitives::{
     map::{HashMap, HashSet},
     Address, StorageValue, B256, U256,
 };
+use reth_execution_types::FlatPreState;
 use reth_primitives_traits::Header;
 use reth_revm::{
-    db::{Cache, CacheDB, DBErrorMarker, DbAccount},
+    db::{Cache, CacheDB, DBErrorMarker},
     primitives::StorageKey,
     state::{AccountInfo, Bytecode},
     DatabaseRef,
 };
 use serde_with::serde_as;
-
-/// Records pre-state data for witness generation.
-#[derive(Debug, Clone, Default)]
-pub struct FlatPreState {
-    /// Accounts accessed during execution.
-    pub accounts: HashMap<Address, DbAccount>,
-    /// Bytecode accessed during execution.
-    pub contracts: HashMap<B256, Bytecode>,
-    /// The set of addresses that have been self-destructed in the execution.
-    pub destructed_addresses: HashSet<Address>,
-}
 
 /// A flat execution witness containing the state and context needed for stateless block execution.
 #[serde_with::serde_as]

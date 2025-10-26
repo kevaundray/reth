@@ -9,8 +9,9 @@ use reth_errors::ProviderResult;
 use reth_metrics::Metrics;
 use reth_primitives_traits::{Account, Bytecode};
 use reth_provider::{
-    AccountReader, BlockHashReader, BytecodeReader, HashedPostStateProvider, StateProofProvider,
-    StateProvider, StateRootProvider, StorageRootProvider,
+    AccountReader, BlockHashReader, BytecodeReader, FlatPreState, FlatWitnessRecord,
+    HashedPostStateProvider, StateProofProvider, StateProvider, StateRootProvider,
+    StorageRootProvider,
 };
 use reth_revm::db::BundleState;
 use reth_trie::{
@@ -119,7 +120,7 @@ impl<S: AccountReader> AccountReader for CachedStateProvider<S> {
     fn basic_account(&self, address: &Address) -> ProviderResult<Option<Account>> {
         if let Some(res) = self.caches.account_cache.get(address) {
             self.metrics.account_cache_hits.increment(1);
-            return Ok(res)
+            return Ok(res);
         }
 
         self.metrics.account_cache_misses.increment(1);
@@ -170,7 +171,7 @@ impl<S: BytecodeReader> BytecodeReader for CachedStateProvider<S> {
     fn bytecode_by_hash(&self, code_hash: &B256) -> ProviderResult<Option<Bytecode>> {
         if let Some(res) = self.caches.code_cache.get(code_hash) {
             self.metrics.code_cache_hits.increment(1);
-            return Ok(res)
+            return Ok(res);
         }
 
         self.metrics.code_cache_misses.increment(1);
@@ -229,6 +230,10 @@ impl<S: StateProofProvider> StateProofProvider for CachedStateProvider<S> {
         target: HashedPostState,
     ) -> ProviderResult<Vec<alloy_primitives::Bytes>> {
         self.state_provider.witness(input, target)
+    }
+
+    fn flat_witness(&self, record: FlatWitnessRecord) -> ProviderResult<FlatPreState> {
+        self.state_provider.flat_witness(record)
     }
 }
 
@@ -410,7 +415,7 @@ impl ExecutionCache {
             // If the account was not modified, as in not changed and not destroyed, then we have
             // nothing to do w.r.t. this particular account and can move on
             if account.status.is_not_modified() {
-                continue
+                continue;
             }
 
             // If the account was destroyed, invalidate from the account / storage caches
@@ -419,7 +424,7 @@ impl ExecutionCache {
                 self.account_cache.invalidate(addr);
 
                 invalidated_accounts.insert(addr);
-                continue
+                continue;
             }
 
             // If we have an account that was modified, but it has a `None` account info, some wild
@@ -427,7 +432,7 @@ impl ExecutionCache {
             // `None` current info, should be destroyed.
             let Some(ref account_info) = account.info else {
                 trace!(target: "engine::caching", ?account, "Account with None account info found in state updates");
-                return Err(())
+                return Err(());
             };
 
             // Now we iterate over all storage and make updates to the cached storage values
@@ -502,9 +507,9 @@ impl ExecutionCacheBuilder {
                 let code_size = match value {
                     Some(bytecode) => {
                         // base weight + actual (padded) bytecode size + size of the jump table
-                        (size_of_val(value) +
-                            bytecode.bytecode().len() +
-                            bytecode
+                        (size_of_val(value)
+                            + bytecode.bytecode().len()
+                            + bytecode
                                 .legacy_jump_table()
                                 .map(|table| table.as_slice().len())
                                 .unwrap_or_default()) as u32

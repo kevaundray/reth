@@ -2,8 +2,10 @@ use crate::{
     providers::state::macros::delegate_provider_impls, AccountReader, BlockHashReader,
     HashedPostStateProvider, StateProvider, StateRootProvider,
 };
-use alloy_primitives::{Address, BlockNumber, Bytes, StorageKey, StorageValue, B256};
+use alloy_primitives::{Address, BlockNumber, Bytes, StorageKey, StorageValue, B256, U256};
+use reth_db::cursor::DbCursorRO;
 use reth_db_api::{cursor::DbDupCursorRO, tables, transaction::DbTx};
+use reth_execution_types::{AccessedAccount, FlatPreState, FlatWitnessRecord};
 use reth_primitives_traits::{Account, Bytecode};
 use reth_storage_api::{BytecodeReader, DBProvider, StateProofProvider, StorageRootProvider};
 use reth_storage_errors::provider::{ProviderError, ProviderResult};
@@ -18,6 +20,7 @@ use reth_trie_db::{
     DatabaseProof, DatabaseStateRoot, DatabaseStorageProof, DatabaseStorageRoot,
     DatabaseTrieWitness,
 };
+use revm_database::DbAccount;
 
 /// State provider over latest state that takes tx reference.
 ///
@@ -117,7 +120,9 @@ impl<Provider: DBProvider + Sync> StorageRootProvider for LatestStateProviderRef
     }
 }
 
-impl<Provider: DBProvider + Sync> StateProofProvider for LatestStateProviderRef<'_, Provider> {
+impl<Provider: DBProvider + BlockHashReader + Sync> StateProofProvider
+    for LatestStateProviderRef<'_, Provider>
+{
     fn proof(
         &self,
         input: TrieInput,
@@ -140,6 +145,66 @@ impl<Provider: DBProvider + Sync> StateProofProvider for LatestStateProviderRef<
             .map_err(ProviderError::from)
             .map(|hm| hm.into_values().collect())
     }
+
+    fn flat_witness(&self, record: FlatWitnessRecord) -> ProviderResult<FlatPreState> {
+        let mut prestate = FlatPreState::default();
+        for (code_hash, code) in &record.contracts {
+            match code {
+                Some(bytecode) => {
+                    prestate.contracts.insert(*code_hash, bytecode.clone());
+                }
+                None => {
+                    // Fetch code from provider if not present in record
+                    if let Some(code) = self.bytecode_by_hash(code_hash)? {
+                        prestate.contracts.insert(*code_hash, code.0);
+                    }
+                }
+            }
+        }
+
+        for (address, account) in &record.accounts {
+            let provider_account = self.basic_account(address)?;
+
+            let mut db_account = match provider_account {
+                Some(account) => DbAccount { info: account.into(), ..Default::default() },
+                None => DbAccount::new_not_existing(),
+            };
+
+            match account {
+                AccessedAccount::Destroyed => {
+                    // When an account is destroyed, statedb discards all storage slots, losing track of
+                    // which slots were accessed pre-destruction. We fetch all storage slots for destroyed
+                    // accounts (mirroring TrieWitness::get_proof_targets in trie/trie/src/witness.rs),
+                    // requiring a lower-level db cursor. Only relevant pre-Cancun where SELFDESTRUCT clears
+                    // storage.
+                    let tx = self.tx();
+                    let mut storage_cursor = tx.cursor_dup_read::<tables::PlainStorageState>()?;
+                    if let Some((_, first_entry)) = storage_cursor.seek_exact(*address)? {
+                        db_account
+                            .storage
+                            .insert(U256::from_be_bytes(first_entry.key.0), first_entry.value);
+
+                        while let Some((_, entry)) = storage_cursor.next_dup()? {
+                            db_account
+                                .storage
+                                .insert(U256::from_be_bytes(entry.key.0), entry.value);
+                        }
+                    }
+                    prestate.destructed_addresses.insert(*address);
+                }
+                AccessedAccount::StorageKeys(storage_keys) => {
+                    // Fetch pre-state storage for accessed slots
+                    for slot in storage_keys {
+                        let val = self.storage(*address, (*slot).into())?.unwrap_or_default();
+                        db_account.storage.insert(*slot, val);
+                    }
+                }
+            }
+            prestate.accounts.insert(*address, db_account);
+        }
+
+        Ok(prestate)
+    }
 }
 
 impl<Provider: DBProvider + Sync> HashedPostStateProvider for LatestStateProviderRef<'_, Provider> {
@@ -158,10 +223,10 @@ impl<Provider: DBProvider + BlockHashReader> StateProvider
         storage_key: StorageKey,
     ) -> ProviderResult<Option<StorageValue>> {
         let mut cursor = self.tx().cursor_dup_read::<tables::PlainStorageState>()?;
-        if let Some(entry) = cursor.seek_by_key_subkey(account, storage_key)? &&
-            entry.key == storage_key
+        if let Some(entry) = cursor.seek_by_key_subkey(account, storage_key)?
+            && entry.key == storage_key
         {
-            return Ok(Some(entry.value))
+            return Ok(Some(entry.value));
         }
         Ok(None)
     }

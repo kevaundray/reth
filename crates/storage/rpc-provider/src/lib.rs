@@ -48,9 +48,9 @@ use reth_provider::{
     AccountReader, BlockHashReader, BlockIdReader, BlockNumReader, BlockReader, BytecodeReader,
     CanonChainTracker, CanonStateNotification, CanonStateNotifications, CanonStateSubscriptions,
     ChainStateBlockReader, ChainStateBlockWriter, ChangeSetReader, DatabaseProviderFactory,
-    HeaderProvider, PruneCheckpointReader, ReceiptProvider, StageCheckpointReader, StateProvider,
-    StateProviderBox, StateProviderFactory, StateReader, StateRootProvider, StorageReader,
-    TransactionVariant, TransactionsProvider,
+    FlatPreState, FlatWitnessRecord, HeaderProvider, PruneCheckpointReader, ReceiptProvider,
+    StageCheckpointReader, StateProvider, StateProviderBox, StateProviderFactory, StateReader,
+    StateRootProvider, StorageReader, TransactionVariant, TransactionsProvider,
 };
 use reth_prune_types::{PruneCheckpoint, PruneSegment};
 use reth_rpc_convert::{TryFromBlockResponse, TryFromReceiptResponse, TryFromTransactionResponse};
@@ -1312,6 +1312,10 @@ where
         _input: TrieInput,
         _target: HashedPostState,
     ) -> Result<Vec<alloy_primitives::Bytes>, ProviderError> {
+        Err(ProviderError::UnsupportedProvider)
+    }
+
+    fn flat_witness(&self, _record: FlatWitnessRecord) -> ProviderResult<FlatPreState> {
         Err(ProviderError::UnsupportedProvider)
     }
 }
