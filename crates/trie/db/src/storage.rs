@@ -1,5 +1,9 @@
 use crate::{DatabaseHashedCursorFactory, DatabaseTrieCursorFactory};
-use alloy_primitives::{keccak256, map::hash_map, Address, BlockNumber, B256};
+use alloy_primitives::{
+    keccak256,
+    map::{hash_map, B256Map},
+    Address, BlockNumber, B256, U256,
+};
 use reth_db_api::{
     cursor::DbCursorRO, models::BlockNumberAddress, tables, transaction::DbTx, DatabaseError,
 };
@@ -82,16 +86,28 @@ impl<'a, TX: DbTx> DatabaseStorageRoot<'a, TX>
 impl<TX: DbTx> DatabaseHashedStorage<TX> for HashedStorage {
     fn from_reverts(tx: &TX, address: Address, from: BlockNumber) -> Result<Self, DatabaseError> {
         let mut storage = Self::new(false);
-        let mut storage_changesets_cursor = tx.cursor_read::<tables::StorageChangeSets>()?;
-        for entry in storage_changesets_cursor.walk_range(BlockNumberAddress((from, address))..)? {
-            let (BlockNumberAddress((_, storage_address)), storage_change) = entry?;
-            if storage_address == address {
-                let hashed_slot = keccak256(storage_change.key);
-                if let hash_map::Entry::Vacant(entry) = storage.storage.entry(hashed_slot) {
-                    entry.insert(storage_change.value);
-                }
-            }
+        for (slot, value) in from_reverts(tx, address, from)? {
+            storage.storage.insert(keccak256(slot), value);
         }
         Ok(storage)
     }
+}
+
+/// Retrieves the original storage values from changed slots since the specified block and address.
+pub fn from_reverts<TX: DbTx>(
+    tx: &TX,
+    address: Address,
+    from: BlockNumber,
+) -> Result<B256Map<U256>, DatabaseError> {
+    let mut storage: B256Map<U256> = Default::default();
+    let mut storage_changesets_cursor = tx.cursor_read::<tables::StorageChangeSets>()?;
+    for entry in storage_changesets_cursor.walk_range(BlockNumberAddress((from, address))..)? {
+        let (BlockNumberAddress((_, storage_address)), storage_change) = entry?;
+        if storage_address == address {
+            if let hash_map::Entry::Vacant(entry) = storage.entry(storage_change.key) {
+                entry.insert(storage_change.value);
+            }
+        }
+    }
+    Ok(storage)
 }

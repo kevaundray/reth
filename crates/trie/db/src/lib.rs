@@ -16,7 +16,7 @@ pub use hashed_cursor::{
 pub use prefix_set::PrefixSetLoader;
 pub use proof::{DatabaseProof, DatabaseStorageProof};
 pub use state::{DatabaseHashedPostState, DatabaseStateRoot};
-pub use storage::{DatabaseHashedStorage, DatabaseStorageRoot};
+pub use storage::{from_reverts, DatabaseHashedStorage, DatabaseStorageRoot};
 pub use trie_cursor::{
     DatabaseAccountTrieCursor, DatabaseStorageTrieCursor, DatabaseTrieCursorFactory,
 };
