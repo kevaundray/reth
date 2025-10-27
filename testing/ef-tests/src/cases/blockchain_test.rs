@@ -331,8 +331,8 @@ fn run_case(
             .zip(range)
             .map(|(bytes, num)| (U256::from(num), keccak256(bytes)))
             .collect();
-        let flat_witness =
-            FlatExecutionWitness::new(flat_prestate, block_hashes, parent.header().clone());
+        let parent_encoded = exec_witness.headers.last().cloned().unwrap();
+        let flat_witness = FlatExecutionWitness::new(flat_prestate, block_hashes, parent_encoded);
 
         program_inputs
             .push((block.clone(), ExecutionWitnesses { trie: exec_witness, flatdb: flat_witness }));
@@ -572,11 +572,11 @@ fn execution_witness_with_parent(parent: &RecoveredBlock<Block>) -> ExecutionWit
     let mut serialized_header = Vec::new();
     parent.header().encode(&mut serialized_header);
     let trie_witness =
-        ExecutionWitness { headers: vec![serialized_header.into()], ..Default::default() };
+        ExecutionWitness { headers: vec![serialized_header.clone().into()], ..Default::default() };
     let flatdb_witness = FlatExecutionWitness::new(
         Default::default(),
         HashMap::from_iter([(U256::from(parent.number), parent.hash())]),
-        parent.header().clone(),
+        serialized_header.into(),
     );
     ExecutionWitnesses { trie: trie_witness, flatdb: flatdb_witness }
 }

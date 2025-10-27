@@ -261,7 +261,11 @@ where
     E: ConfigureEvm<Primitives = EthPrimitives> + Clone + 'static,
 {
     let recovered_block = recover_block_with_public_keys(current_block, public_keys, &*chain_spec)?;
-    let parent_header = SealedHeader::seal_slow(witness.parent_header.clone());
+
+    let hash = keccak256(&witness.parent_header);
+    let parent_header = alloy_rlp::decode_exact::<Header>(&witness.parent_header)
+        .map(|h| SealedHeader::new(h, hash))
+        .map_err(|_| StatelessValidationError::HeaderDeserializationFailed)?;
     let db = witness.create_db();
 
     let hashed_post_state = stateless_validation_execution(

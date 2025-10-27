@@ -13,10 +13,9 @@ pub mod bincode;
 use alloc::fmt;
 use alloy_primitives::{
     map::{HashMap, HashSet},
-    Address, StorageValue, B256, U256,
+    Address, Bytes, StorageValue, B256, U256,
 };
 use reth_execution_types::FlatPreState;
-use reth_primitives_traits::Header;
 use reth_revm::{
     db::{Cache, CacheDB, DBErrorMarker},
     primitives::StorageKey,
@@ -33,7 +32,7 @@ pub struct FlatExecutionWitness {
     #[serde_as(as = "bincode::CacheBincode")]
     pub state: Cache,
     /// The parent block header required for pre-execution validations.
-    pub parent_header: Header,
+    pub parent_header: Bytes,
     /// The set of addresses that have been self-destructed in the execution.
     pub destructed_addresses: HashSet<Address>,
 }
@@ -43,7 +42,7 @@ impl FlatExecutionWitness {
     pub fn new(
         pre_state: FlatPreState,
         block_hashes: HashMap<U256, B256>,
-        parent_header: Header,
+        parent_header: Bytes,
     ) -> Self {
         Self {
             state: Cache {
