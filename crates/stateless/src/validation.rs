@@ -139,9 +139,22 @@ pub enum StatelessValidationError {
         address: alloy_primitives::Address,
     },
 
+    /// Error when flatdb storage slot state does not match the trie witness.
+    #[error("flatdb storage slot state mismatch with trie witness for address {address}")]
+    FlatdbStorageSlotStateMismatch {
+        /// The address of the account with mismatched state.
+        address: alloy_primitives::Address,
+        /// The storage slot with mismatched state.
+        slot: alloy_primitives::U256,
+    },
+
     /// Error getting account from the witness database.
     #[error("getting account from witness database")]
     GetAccountFromWitnessDatabase,
+
+    /// Error getting storage slot from the witness database.
+    #[error("getting storage slot from witness database")]
+    GetStorageSlotFromWitnessDatabase,
 }
 
 /// Performs stateless validation of a block using the provided witness data.
@@ -380,11 +393,22 @@ where
             let trie_account = db
                 .basic(address)
                 .map_err(|_| StatelessValidationError::GetAccountFromWitnessDatabase)?;
-            let flatdb_account = (flatdb_account.account_state != AccountState::NotExisting)
+            let flatdb_account_info = (flatdb_account.account_state != AccountState::NotExisting)
                 .then_some(flatdb_account.info);
 
-            if trie_account != flatdb_account {
+            if trie_account != flatdb_account_info {
                 return Err(StatelessValidationError::FlatdbAccountStateMismatch { address });
+            }
+            for (slot, value) in flatdb_account.storage {
+                let trie_value = db
+                    .storage(address, slot)
+                    .map_err(|_| StatelessValidationError::GetStorageSlotFromWitnessDatabase)?;
+                if trie_value != value {
+                    return Err(StatelessValidationError::FlatdbStorageSlotStateMismatch {
+                        address,
+                        slot,
+                    });
+                }
             }
         }
     });
