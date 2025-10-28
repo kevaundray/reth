@@ -624,7 +624,8 @@ where
         self.debug_execution_witness_for_block(block).await
     }
 
-    /// Generates a flat execution witness for the given block hash. see
+    /// The `debug_flatExecutionWitnessByBlockHash` method allows for re-execution of a block with the purpose of
+    /// generating an execution-only witness.
     pub async fn debug_flat_execution_witness_by_block_hash(
         &self,
         hash: B256,
@@ -635,6 +636,22 @@ where
             .recovered_block(hash.into())
             .await?
             .ok_or(EthApiError::HeaderNotFound(hash.into()))?;
+
+        self.debug_flat_execution_witness_for_block(block).await
+    }
+
+    /// The `debug_flatExecutionWitness` method allows for re-execution of a block with the purpose of
+    /// generating an execution-only witness.
+    pub async fn debug_flat_execution_witness(
+        &self,
+        block_id: BlockNumberOrTag,
+    ) -> Result<FlatExecutionWitness, Eth::Error> {
+        let this = self.clone();
+        let block = this
+            .eth_api()
+            .recovered_block(block_id.into())
+            .await?
+            .ok_or(EthApiError::HeaderNotFound(block_id.into()))?;
 
         self.debug_flat_execution_witness_for_block(block).await
     }
@@ -1171,6 +1188,15 @@ where
         Self::debug_execution_witness(self, block).await.map_err(Into::into)
     }
 
+    /// Handler for `debug_flatExecutionWitness`
+    async fn debug_flat_execution_witness(
+        &self,
+        block: BlockNumberOrTag,
+    ) -> RpcResult<FlatExecutionWitness> {
+        let _permit = self.acquire_trace_permit().await;
+        Self::debug_flat_execution_witness(self, block).await.map_err(Into::into)
+    }
+
     /// Handler for `debug_executionWitnessByBlockHash`
     async fn debug_execution_witness_by_block_hash(
         &self,
@@ -1178,6 +1204,15 @@ where
     ) -> RpcResult<ExecutionWitness> {
         let _permit = self.acquire_trace_permit().await;
         Self::debug_execution_witness_by_block_hash(self, hash).await.map_err(Into::into)
+    }
+
+    /// Handler for `debug_flatExecutionWitnessByBlockHash`
+    async fn debug_flat_execution_witness_by_block_hash(
+        &self,
+        hash: B256,
+    ) -> RpcResult<FlatExecutionWitness> {
+        let _permit = self.acquire_trace_permit().await;
+        Self::debug_flat_execution_witness_by_block_hash(self, hash).await.map_err(Into::into)
     }
 
     async fn debug_backtrace_at(&self, _location: &str) -> RpcResult<()> {
