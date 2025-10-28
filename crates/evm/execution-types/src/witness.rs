@@ -43,8 +43,7 @@ impl FlatWitnessRecord {
             .cache
             .contracts
             .values()
-            .map(|code| code.original_bytes())
-            .map(|code_bytes| (keccak256(&code_bytes), Some(Bytecode::new_legacy(code_bytes))))
+            .map(|code| (keccak256(code.original_bytes()), Some(code.clone())))
             .collect();
 
         for (address, account) in &statedb.cache.accounts {
