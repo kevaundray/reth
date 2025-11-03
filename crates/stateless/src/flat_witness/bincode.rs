@@ -1,12 +1,14 @@
 #![allow(missing_docs)]
 
 use alloc::collections::BTreeMap;
-use alloy_primitives::{Address, Bytes, B256, U256};
+use alloy_primitives::{map::B256Map, Address, Bytes, B256, U256};
+use reth_primitives_traits::Account;
 use reth_revm::{
     db::{AccountState, Cache, DbAccount},
     primitives::{StorageKey, StorageValue},
     state::{AccountInfo, Bytecode},
 };
+use reth_trie_common::{HashedPostState, HashedStorage};
 use serde_with::{DeserializeAs, SerializeAs};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -18,11 +20,8 @@ pub struct CacheBincode {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DbAccountBincode {
-    /// Basic account information.
     pub info: AccountInfo,
-    /// If account is selfdestructed or newly created, storage will be cleared.
     pub account_state: AccountState,
-    /// Storage slots
     pub storage: BTreeMap<StorageKey, StorageValue>,
 }
 
@@ -84,5 +83,32 @@ impl<'de> DeserializeAs<'de, Cache> for CacheBincode {
             logs: Default::default(),
             block_hashes: cache_bincode.block_hashes.into_iter().collect(),
         })
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct HashedPostStateBincode {
+    pub accounts: BTreeMap<B256, Option<Account>>,
+    pub storages: BTreeMap<B256, HashedStorageBincode>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct HashedStorageBincode {
+    pub wiped: bool,
+    pub storage: BTreeMap<B256, U256>,
+}
+
+impl From<HashedStorage> for HashedStorageBincode {
+    fn from(storage: HashedStorage) -> Self {
+        Self { wiped: storage.wiped, storage: storage.storage.into_iter().collect() }
+    }
+}
+
+impl From<HashedPostState> for HashedPostStateBincode {
+    fn from(state: HashedPostState) -> Self {
+        Self {
+            accounts: state.accounts.into_iter().collect(),
+            storages: state.storages.into_iter().map(|(k, v)| (k, v.into())).collect(),
+        }
     }
 }
