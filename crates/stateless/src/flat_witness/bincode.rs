@@ -46,8 +46,8 @@ impl From<DbAccountBincode> for DbAccount {
     }
 }
 
-impl From<Cache> for CacheBincode {
-    fn from(cache: Cache) -> Self {
+impl From<&Cache> for CacheBincode {
+    fn from(cache: &Cache) -> Self {
         Self {
             accounts: cache.accounts.iter().map(|(k, v)| (*k, v.clone().into())).collect(),
             contracts: cache.contracts.iter().map(|(k, v)| (*k, v.original_bytes())).collect(),
@@ -62,7 +62,7 @@ impl SerializeAs<Cache> for CacheBincode {
         S: serde::Serializer,
     {
         use serde::Serialize;
-        let cache_bincode: Self = source.clone().into();
+        let cache_bincode: Self = source.into();
         cache_bincode.serialize(serializer)
     }
 }
