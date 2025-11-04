@@ -19,10 +19,11 @@ use reth_chainspec::{EthChainSpec, EthereumHardforks};
 use reth_consensus::{Consensus, HeaderValidator};
 use reth_errors::ConsensusError;
 use reth_ethereum_consensus::{validate_block_post_execution, EthBeaconConsensus};
-use reth_ethereum_primitives::EthereumReceipt;
-use reth_ethereum_primitives::{Block, EthPrimitives};
-use reth_evm::execute::Executor;
-use reth_evm::{execute::BlockExecutionOutput, ConfigureEvm};
+use reth_ethereum_primitives::{Block, EthPrimitives, EthereumReceipt};
+use reth_evm::{
+    execute::{BlockExecutionOutput, Executor},
+    ConfigureEvm,
+};
 use reth_primitives_traits::{RecoveredBlock, SealedBlock, SealedHeader};
 use reth_revm::{
     db::{AccountState, Cache},

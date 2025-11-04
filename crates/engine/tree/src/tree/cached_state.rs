@@ -496,9 +496,9 @@ impl ExecutionCacheBuilder {
                 let code_size = match value {
                     Some(bytecode) => {
                         // base weight + actual (padded) bytecode size + size of the jump table
-                        (size_of_val(value)
-                            + bytecode.bytecode().len()
-                            + bytecode
+                        (size_of_val(value) +
+                            bytecode.bytecode().len() +
+                            bytecode
                                 .legacy_jump_table()
                                 .map(|table| table.as_slice().len())
                                 .unwrap_or_default()) as u32

@@ -397,7 +397,7 @@ fn run_case(
             .expect("Failed to recover public keys from transaction signatures");
 
         // Validate stateless execution using a sparse trie for the storage access.
-        let (_, trie_post_state) = stateless_validation_with_trie::<StatelessSparseTrie, _, _>(
+        let (_, trie_output) = stateless_validation_with_trie::<StatelessSparseTrie, _, _>(
             block.clone(),
             public_keys.clone(),
             execution_witnesses.trie.clone(),
@@ -405,9 +405,11 @@ fn run_case(
             EthEvmConfig::new(chain_spec.clone()),
         )
         .expect("stateless validation failed");
+        let trie_post_state =
+            HashedPostState::from_bundle_state::<KeccakKeyHasher>(&trie_output.state.state);
 
         // Validate stateless execution using a flatdb for the storage access.
-        let (_, flatdb_post_state) = stateless_validation_with_flatdb::<_, _>(
+        let (_, flatdb_output) = stateless_validation_with_flatdb::<_, _>(
             block.clone(),
             public_keys.clone(),
             execution_witnesses.flatdb.clone(),
@@ -415,6 +417,8 @@ fn run_case(
             EthEvmConfig::new(chain_spec.clone()),
         )
         .expect("stateless validation with flatdb failed");
+        let flatdb_post_state =
+            HashedPostState::from_bundle_state::<KeccakKeyHasher>(&flatdb_output.state.state);
 
         if trie_post_state != flatdb_post_state {
             return Err(Error::Assertion(

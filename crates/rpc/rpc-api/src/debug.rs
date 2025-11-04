@@ -145,8 +145,8 @@ pub trait DebugApi<TxReq: RpcObject> {
     async fn debug_execution_witness(&self, block: BlockNumberOrTag)
         -> RpcResult<ExecutionWitness>;
 
-    /// The `debug_flatExecutionWitness` method allows for re-execution of a block with the purpose of
-    /// generating an execution-only witness.
+    /// The `debug_flatExecutionWitness` method allows for re-execution of a block with the purpose
+    /// of generating an execution-only witness.
     ///
     /// The first argument is the block number or tag.
     #[method(name = "flatExecutionWitness")]

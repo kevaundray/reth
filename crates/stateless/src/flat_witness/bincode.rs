@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 use alloc::collections::BTreeMap;
-use alloy_primitives::{map::B256Map, Address, Bytes, B256, U256};
+use alloy_primitives::{Address, Bytes, B256, U256};
 use reth_primitives_traits::Account;
 use reth_revm::{
     db::{AccountState, Cache, DbAccount},

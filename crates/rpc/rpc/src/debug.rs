@@ -619,8 +619,8 @@ where
         self.debug_execution_witness_for_block(block).await
     }
 
-    /// The `debug_flatExecutionWitnessByBlockHash` method allows for re-execution of a block with the purpose of
-    /// generating an execution-only witness.
+    /// The `debug_flatExecutionWitnessByBlockHash` method allows for re-execution of a block with
+    /// the purpose of generating an execution-only witness.
     pub async fn debug_flat_execution_witness_by_block_hash(
         &self,
         hash: B256,
@@ -635,8 +635,8 @@ where
         self.debug_flat_execution_witness_for_block(block).await
     }
 
-    /// The `debug_flatExecutionWitness` method allows for re-execution of a block with the purpose of
-    /// generating an execution-only witness.
+    /// The `debug_flatExecutionWitness` method allows for re-execution of a block with the purpose
+    /// of generating an execution-only witness.
     pub async fn debug_flat_execution_witness(
         &self,
         block_id: BlockNumberOrTag,
