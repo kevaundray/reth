@@ -19,8 +19,10 @@ use reth_chainspec::{EthChainSpec, EthereumHardforks};
 use reth_consensus::{Consensus, HeaderValidator};
 use reth_errors::ConsensusError;
 use reth_ethereum_consensus::{validate_block_post_execution, EthBeaconConsensus};
+use reth_ethereum_primitives::EthereumReceipt;
 use reth_ethereum_primitives::{Block, EthPrimitives};
-use reth_evm::{execute::Executor, ConfigureEvm};
+use reth_evm::execute::Executor;
+use reth_evm::{execute::BlockExecutionOutput, ConfigureEvm};
 use reth_primitives_traits::{RecoveredBlock, SealedBlock, SealedHeader};
 use reth_revm::{
     db::{AccountState, Cache},
@@ -198,19 +200,19 @@ pub fn stateless_validation<ChainSpec, E>(
     witness: ExecutionWitness,
     chain_spec: Arc<ChainSpec>,
     evm_config: E,
-) -> Result<B256, StatelessValidationError>
+) -> Result<(B256, BlockExecutionOutput<EthereumReceipt>), StatelessValidationError>
 where
     ChainSpec: Send + Sync + EthChainSpec<Header = Header> + EthereumHardforks + Debug,
     E: ConfigureEvm<Primitives = EthPrimitives> + Clone + 'static,
 {
-    let (hash, _) = stateless_validation_with_trie::<StatelessSparseTrie, ChainSpec, E>(
+    let (hash, output) = stateless_validation_with_trie::<StatelessSparseTrie, ChainSpec, E>(
         current_block,
         public_keys,
         witness,
         chain_spec,
         evm_config,
     )?;
-    Ok(hash)
+    Ok((hash, output))
 }
 
 /// Performs stateless validation of a block using a custom `StatelessTrie` implementation.
@@ -225,7 +227,7 @@ pub fn stateless_validation_with_trie<T, ChainSpec, E>(
     witness: ExecutionWitness,
     chain_spec: Arc<ChainSpec>,
     evm_config: E,
-) -> Result<(B256, HashedPostState), StatelessValidationError>
+) -> Result<(B256, BlockExecutionOutput<EthereumReceipt>), StatelessValidationError>
 where
     T: StatelessTrie,
     ChainSpec: Send + Sync + EthChainSpec<Header = Header> + EthereumHardforks + Debug,
@@ -243,12 +245,13 @@ where
         track_cycles!("verify_witness", T::new(&witness, parent.state_root)?);
     let db = WitnessDatabase::new(&trie, bytecode, ancestor_hashes);
 
-    let hashed_post_state =
-        stateless_validation_execution(&block, &parent, chain_spec, evm_config, db)?;
+    let output = stateless_validation_execution(&block, &parent, chain_spec, evm_config, db)?;
 
     // Compute and check the post state root
     track_cycles!("post_state_compute", {
-        let state_root = trie.calculate_state_root(hashed_post_state.clone())?;
+        let hashed_post_state =
+            HashedPostState::from_bundle_state::<KeccakKeyHasher>(&output.state.state);
+        let state_root = trie.calculate_state_root(hashed_post_state)?;
         if state_root != block.state_root {
             return Err(StatelessValidationError::PostStateRootMismatch {
                 got: state_root,
@@ -258,7 +261,7 @@ where
     });
 
     // Return block hash
-    Ok((block.hash_slow(), hashed_post_state))
+    Ok((block.hash_slow(), output))
 }
 
 /// Performs stateless validation of a block using a flatdb execution witness.
@@ -268,7 +271,7 @@ pub fn stateless_validation_with_flatdb<ChainSpec, E>(
     witness: FlatExecutionWitness,
     chain_spec: Arc<ChainSpec>,
     evm_config: E,
-) -> Result<(B256, HashedPostState), StatelessValidationError>
+) -> Result<(B256, BlockExecutionOutput<EthereumReceipt>), StatelessValidationError>
 where
     ChainSpec: Send + Sync + EthChainSpec<Header = Header> + EthereumHardforks + Debug,
     E: ConfigureEvm<Primitives = EthPrimitives> + Clone + 'static,
@@ -281,7 +284,7 @@ where
         .map_err(|_| StatelessValidationError::HeaderDeserializationFailed)?;
     let db = witness.create_db();
 
-    let hashed_post_state = stateless_validation_execution(
+    let output = stateless_validation_execution(
         &recovered_block,
         &parent_header,
         chain_spec,
@@ -289,7 +292,7 @@ where
         db,
     )?;
 
-    Ok((recovered_block.hash_slow(), hashed_post_state))
+    Ok((recovered_block.hash_slow(), output))
 }
 
 /// Executes the block statelessly with a provided `Database` and performs post-execution
@@ -300,7 +303,7 @@ fn stateless_validation_execution<DB: reth_evm::Database, ChainSpec, E>(
     chain_spec: Arc<ChainSpec>,
     evm_config: E,
     db: DB,
-) -> Result<HashedPostState, StatelessValidationError>
+) -> Result<BlockExecutionOutput<EthereumReceipt>, StatelessValidationError>
 where
     ChainSpec: Send + Sync + EthChainSpec<Header = Header> + EthereumHardforks + Debug,
     E: ConfigureEvm<Primitives = EthPrimitives> + Clone + 'static,
@@ -321,7 +324,7 @@ where
     validate_block_post_execution(current_block, &chain_spec, &output.receipts, &output.requests)
         .map_err(StatelessValidationError::ConsensusValidationFailed)?;
 
-    Ok(HashedPostState::from_bundle_state::<KeccakKeyHasher>(&output.state.state))
+    Ok(output)
 }
 
 /// Cross-validates flatdb state against a cryptographically verified sparse trie witness.
