@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 use alloy_primitives::{Address, Bytes, B256, U256};
 use reth_primitives_traits::Account;
 use reth_revm::{
@@ -13,25 +13,23 @@ use serde_with::{DeserializeAs, SerializeAs};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CacheBincode {
-    pub accounts: BTreeMap<Address, DbAccountBincode>,
-    pub contracts: BTreeMap<B256, Bytes>,
-    pub block_hashes: BTreeMap<U256, B256>,
+    pub accounts: Vec<(Address, DbAccountBincode)>,
+    pub contracts: Vec<(B256, Bytes)>,
+    pub block_hashes: Vec<(U256, B256)>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DbAccountBincode {
     pub info: AccountInfo,
     pub account_state: AccountState,
-    pub storage: BTreeMap<StorageKey, StorageValue>,
+    pub storage: Vec<(StorageKey, StorageValue)>,
 }
 
 impl From<DbAccount> for DbAccountBincode {
     fn from(account: DbAccount) -> Self {
-        Self {
-            info: account.info,
-            account_state: account.account_state,
-            storage: account.storage.into_iter().collect(),
-        }
+        let mut storage: Vec<_> = account.storage.into_iter().collect();
+        storage.sort_unstable_by_key(|(k, _)| *k);
+        Self { info: account.info, account_state: account.account_state, storage }
     }
 }
 
@@ -47,11 +45,18 @@ impl From<DbAccountBincode> for DbAccount {
 
 impl From<&Cache> for CacheBincode {
     fn from(cache: &Cache) -> Self {
-        Self {
-            accounts: cache.accounts.iter().map(|(k, v)| (*k, v.clone().into())).collect(),
-            contracts: cache.contracts.iter().map(|(k, v)| (*k, v.original_bytes())).collect(),
-            block_hashes: cache.block_hashes.iter().map(|(k, v)| (*k, *v)).collect(),
-        }
+        let mut accounts: Vec<_> =
+            cache.accounts.iter().map(|(k, v)| (*k, v.clone().into())).collect();
+        accounts.sort_unstable_by_key(|(k, _)| *k);
+
+        let mut contracts: Vec<_> =
+            cache.contracts.iter().map(|(k, v)| (*k, v.original_bytes())).collect();
+        contracts.sort_unstable_by_key(|(k, _)| *k);
+
+        let mut block_hashes: Vec<_> = cache.block_hashes.iter().map(|(k, v)| (*k, *v)).collect();
+        block_hashes.sort_unstable_by_key(|(k, _)| *k);
+
+        Self { accounts, contracts, block_hashes }
     }
 }
 
@@ -88,27 +93,32 @@ impl<'de> DeserializeAs<'de, Cache> for CacheBincode {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HashedPostStateBincode {
-    pub accounts: BTreeMap<B256, Option<Account>>,
-    pub storages: BTreeMap<B256, HashedStorageBincode>,
+    pub accounts: Vec<(B256, Option<Account>)>,
+    pub storages: Vec<(B256, HashedStorageBincode)>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HashedStorageBincode {
     pub wiped: bool,
-    pub storage: BTreeMap<B256, U256>,
+    pub storage: Vec<(B256, U256)>,
 }
 
 impl From<HashedStorage> for HashedStorageBincode {
     fn from(storage: HashedStorage) -> Self {
-        Self { wiped: storage.wiped, storage: storage.storage.into_iter().collect() }
+        let mut storage_vec: Vec<_> = storage.storage.into_iter().collect();
+        storage_vec.sort_unstable_by_key(|(k, _)| *k);
+        Self { wiped: storage.wiped, storage: storage_vec }
     }
 }
 
 impl From<HashedPostState> for HashedPostStateBincode {
     fn from(state: HashedPostState) -> Self {
-        Self {
-            accounts: state.accounts.into_iter().collect(),
-            storages: state.storages.into_iter().map(|(k, v)| (k, v.into())).collect(),
-        }
+        let mut accounts: Vec<_> = state.accounts.into_iter().collect();
+        accounts.sort_unstable_by_key(|(k, _)| *k);
+
+        let mut storages: Vec<_> = state.storages.into_iter().map(|(k, v)| (k, v.into())).collect();
+        storages.sort_unstable_by_key(|(k, _)| *k);
+
+        Self { accounts, storages }
     }
 }
