@@ -18,8 +18,11 @@ use reth_chainspec::{EthChainSpec, EthereumHardforks};
 use reth_consensus::{Consensus, HeaderValidator};
 use reth_errors::ConsensusError;
 use reth_ethereum_consensus::{validate_block_post_execution, EthBeaconConsensus};
-use reth_ethereum_primitives::{Block, EthPrimitives};
-use reth_evm::{execute::Executor, ConfigureEvm};
+use reth_ethereum_primitives::{Block, EthPrimitives, EthereumReceipt};
+use reth_evm::{
+    execute::{BlockExecutionOutput, Executor},
+    ConfigureEvm,
+};
 use reth_primitives_traits::{RecoveredBlock, SealedHeader};
 use reth_trie_common::{HashedPostState, KeccakKeyHasher};
 
@@ -145,7 +148,7 @@ pub fn stateless_validation<ChainSpec, E>(
     witness: ExecutionWitness,
     chain_spec: Arc<ChainSpec>,
     evm_config: E,
-) -> Result<B256, StatelessValidationError>
+) -> Result<(B256, BlockExecutionOutput<EthereumReceipt>), StatelessValidationError>
 where
     ChainSpec: Send + Sync + EthChainSpec<Header = Header> + EthereumHardforks + Debug,
     E: ConfigureEvm<Primitives = EthPrimitives> + Clone + 'static,
@@ -171,7 +174,7 @@ pub fn stateless_validation_with_trie<T, ChainSpec, E>(
     witness: ExecutionWitness,
     chain_spec: Arc<ChainSpec>,
     evm_config: E,
-) -> Result<B256, StatelessValidationError>
+) -> Result<(B256, BlockExecutionOutput<EthereumReceipt>), StatelessValidationError>
 where
     T: StatelessTrie,
     ChainSpec: Send + Sync + EthChainSpec<Header = Header> + EthereumHardforks + Debug,
@@ -250,7 +253,7 @@ where
     });
 
     // Return block hash
-    Ok(current_block.hash_slow())
+    Ok((current_block.hash_slow(), output))
 }
 
 /// Performs consensus validation checks on a block without execution or state validation.
