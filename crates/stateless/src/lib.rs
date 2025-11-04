@@ -39,12 +39,15 @@ mod recover_block;
 /// Sparse trie implementation for stateless validation
 pub mod trie;
 
+use alloy_genesis::ChainConfig;
 #[doc(inline)]
 pub use recover_block::UncompressedPublicKey;
 #[doc(inline)]
 pub use trie::StatelessTrie;
 #[doc(inline)]
 pub use validation::stateless_validation_with_trie;
+
+pub use alloy_genesis::Genesis;
 
 /// Implementation of stateless validation
 pub mod validation;
@@ -67,4 +70,25 @@ pub struct StatelessInput {
     pub block: Block,
     /// `ExecutionWitness` for the stateless validation function
     pub witness: ExecutionWitness,
+    /// Chain configuration for the stateless validation function
+    #[serde_as(as = "alloy_genesis::serde_bincode_compat::ChainConfig<'_>")]
+    pub chain_config: ChainConfig,
+}
+
+/// Tracks the amount of cycles a region of code takes up
+/// in a zkvm environment and is no-op otherwise.
+#[macro_export]
+macro_rules! track_cycles {
+    ($name:expr, $body:expr) => {{
+        #[cfg(target_os = "zkvm")]
+        {
+            tracing::info!("cycle-tracker-report-start: {}", $name);
+            let result = $body;
+            tracing::info!("cycle-tracker-report-end: {}", $name);
+            result
+        }
+
+        #[cfg(not(target_os = "zkvm"))]
+        $body
+    }};
 }

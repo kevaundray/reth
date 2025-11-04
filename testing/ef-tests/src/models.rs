@@ -243,12 +243,12 @@ impl Account {
                 } else {
                     return Err(Error::Assertion(format!(
                         "Slot {slot:?} is missing from the database. Expected {value:?}"
-                    )))
+                    )));
                 }
             } else {
                 return Err(Error::Assertion(format!(
                     "Slot {slot:?} is missing from the database. Expected {value:?}"
-                )))
+                )));
             }
         }
 
@@ -323,7 +323,7 @@ impl From<ForkSpec> for ChainSpec {
     fn from(fork_spec: ForkSpec) -> Self {
         let spec_builder = ChainSpecBuilder::mainnet().reset();
 
-        match fork_spec {
+        let chain_spec = match fork_spec {
             ForkSpec::Frontier => spec_builder.frontier_activated(),
             ForkSpec::FrontierToHomesteadAt5 => spec_builder
                 .frontier_activated()
@@ -372,7 +372,9 @@ impl From<ForkSpec> for ChainSpec {
                 .with_fork(EthereumHardfork::Prague, ForkCondition::Timestamp(15_000)),
             ForkSpec::Prague => spec_builder.prague_activated(),
         }
-        .build()
+        .build();
+
+        chain_spec
     }
 }
 

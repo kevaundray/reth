@@ -1,5 +1,6 @@
 use crate::{
     recover_block::{recover_block_with_public_keys, UncompressedPublicKey},
+    track_cycles,
     trie::{StatelessSparseTrie, StatelessTrie},
     witness_db::WitnessDatabase,
     ExecutionWitness,
@@ -219,30 +220,37 @@ where
     validate_block_consensus(chain_spec.clone(), &current_block, parent)?;
 
     // First verify that the pre-state reads are correct
-    let (mut trie, bytecode) = T::new(&witness, parent.state_root)?;
+    let (mut trie, bytecode) =
+        track_cycles!("verify_witness", T::new(&witness, parent.state_root)?);
 
     // Create an in-memory database that will use the reads to validate the block
     let db = WitnessDatabase::new(&trie, bytecode, ancestor_hashes);
 
     // Execute the block
     let executor = evm_config.executor(db);
-    let output = executor
-        .execute(&current_block)
-        .map_err(|e| StatelessValidationError::StatelessExecutionFailed(e.to_string()))?;
+    let output = track_cycles!(
+        "block_execution",
+        executor
+            .execute(&current_block)
+            .map_err(|e| StatelessValidationError::StatelessExecutionFailed(e.to_string()))?
+    );
 
     // Post validation checks
     validate_block_post_execution(&current_block, &chain_spec, &output.receipts, &output.requests)
         .map_err(StatelessValidationError::ConsensusValidationFailed)?;
 
     // Compute and check the post state root
-    let hashed_state = HashedPostState::from_bundle_state::<KeccakKeyHasher>(&output.state.state);
-    let state_root = trie.calculate_state_root(hashed_state)?;
-    if state_root != current_block.state_root {
-        return Err(StatelessValidationError::PostStateRootMismatch {
-            got: state_root,
-            expected: current_block.state_root,
-        });
-    }
+    track_cycles!("post_state_compute", {
+        let hashed_state =
+            HashedPostState::from_bundle_state::<KeccakKeyHasher>(&output.state.state);
+        let state_root = trie.calculate_state_root(hashed_state)?;
+        if state_root != current_block.state_root {
+            return Err(StatelessValidationError::PostStateRootMismatch {
+                got: state_root,
+                expected: current_block.state_root,
+            });
+        }
+    });
 
     // Return block hash
     Ok((current_block.hash_slow(), output))
