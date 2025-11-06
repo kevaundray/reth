@@ -202,6 +202,8 @@ pub struct ExecutionWitnesses {
     pub trie: ExecutionWitness,
     /// Flatdb-based execution witness.
     pub flatdb: FlatExecutionWitness,
+    /// Post-state witness.
+    pub post_state: HashedPostState,
 }
 
 /// Executes a single `BlockchainTest` returning an error as soon as any block has a consensus
@@ -334,12 +336,19 @@ fn run_case(
         let parent_encoded = exec_witness.headers.last().cloned().unwrap();
         let flat_witness = FlatExecutionWitness::new(flat_prestate, block_hashes, parent_encoded);
 
-        program_inputs
-            .push((block.clone(), ExecutionWitnesses { trie: exec_witness, flatdb: flat_witness }));
-
         // Compute and check the post state root
         let hashed_state =
             HashedPostState::from_bundle_state::<KeccakKeyHasher>(output.state.state());
+
+        program_inputs.push((
+            block.clone(),
+            ExecutionWitnesses {
+                trie: exec_witness,
+                flatdb: flat_witness,
+                post_state: hashed_state.clone(),
+            },
+        ));
+
         let (computed_state_root, _) =
             StateRoot::overlay_root_with_updates(provider.tx_ref(), hashed_state.clone())
                 .map_err(|err| Error::block_failed(block_number, program_inputs.clone(), err))?;
@@ -582,5 +591,9 @@ fn execution_witness_with_parent(parent: &RecoveredBlock<Block>) -> ExecutionWit
         HashMap::from_iter([(U256::from(parent.number), parent.hash())]),
         serialized_header.into(),
     );
-    ExecutionWitnesses { trie: trie_witness, flatdb: flatdb_witness }
+    ExecutionWitnesses {
+        trie: trie_witness,
+        flatdb: flatdb_witness,
+        post_state: Default::default(),
+    }
 }
