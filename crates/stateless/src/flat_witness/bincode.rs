@@ -43,17 +43,14 @@ impl From<DbAccountBincode> for DbAccount {
     }
 }
 
-impl From<&Cache> for CacheBincode {
-    fn from(cache: &Cache) -> Self {
-        let mut accounts: Vec<_> =
-            cache.accounts.iter().map(|(k, v)| (*k, v.clone().into())).collect();
+impl From<Cache> for CacheBincode {
+    fn from(cache: Cache) -> Self {
+        let mut accounts: Vec<_> = cache.accounts.into_iter().map(|(k, v)| (k, v.into())).collect();
         accounts.sort_unstable_by_key(|(k, _)| *k);
-
         let mut contracts: Vec<_> =
-            cache.contracts.iter().map(|(k, v)| (*k, v.original_bytes())).collect();
+            cache.contracts.into_iter().map(|(k, v)| (k, v.original_bytes())).collect();
         contracts.sort_unstable_by_key(|(k, _)| *k);
-
-        let mut block_hashes: Vec<_> = cache.block_hashes.iter().map(|(k, v)| (*k, *v)).collect();
+        let mut block_hashes: Vec<_> = cache.block_hashes.into_iter().collect();
         block_hashes.sort_unstable_by_key(|(k, _)| *k);
 
         Self { accounts, contracts, block_hashes }
@@ -66,7 +63,7 @@ impl SerializeAs<Cache> for CacheBincode {
         S: serde::Serializer,
     {
         use serde::Serialize;
-        let cache_bincode: Self = source.into();
+        let cache_bincode: Self = source.clone().into();
         cache_bincode.serialize(serializer)
     }
 }
@@ -105,7 +102,7 @@ pub struct HashedStorageBincode {
 
 impl From<HashedStorage> for HashedStorageBincode {
     fn from(storage: HashedStorage) -> Self {
-        let mut storage_vec: Vec<_> = storage.storage.into_iter().collect();
+        let mut storage_vec: Vec<_> = storage.storage.iter().map(|(k, v)| (*k, *v)).collect();
         storage_vec.sort_unstable_by_key(|(k, _)| *k);
         Self { wiped: storage.wiped, storage: storage_vec }
     }
@@ -113,12 +110,43 @@ impl From<HashedStorage> for HashedStorageBincode {
 
 impl From<HashedPostState> for HashedPostStateBincode {
     fn from(state: HashedPostState) -> Self {
-        let mut accounts: Vec<_> = state.accounts.into_iter().collect();
+        let mut accounts: Vec<_> = state.accounts.iter().map(|(k, v)| (*k, *v)).collect();
         accounts.sort_unstable_by_key(|(k, _)| *k);
 
         let mut storages: Vec<_> = state.storages.into_iter().map(|(k, v)| (k, v.into())).collect();
         storages.sort_unstable_by_key(|(k, _)| *k);
 
         Self { accounts, storages }
+    }
+}
+
+impl From<HashedStorageBincode> for HashedStorage {
+    fn from(storage: HashedStorageBincode) -> Self {
+        Self { wiped: storage.wiped, storage: storage.storage.into_iter().collect() }
+    }
+}
+
+impl SerializeAs<HashedPostState> for HashedPostStateBincode {
+    fn serialize_as<S>(source: &HashedPostState, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::Serialize;
+        let post_state_bincode: Self = source.clone().into();
+        post_state_bincode.serialize(serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, HashedPostState> for HashedPostStateBincode {
+    fn deserialize_as<D>(deserializer: D) -> Result<HashedPostState, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::Deserialize;
+        let post_state_bincode = Self::deserialize(deserializer)?;
+        Ok(HashedPostState {
+            accounts: post_state_bincode.accounts.into_iter().collect(),
+            storages: post_state_bincode.storages.into_iter().map(|(k, v)| (k, v.into())).collect(),
+        })
     }
 }

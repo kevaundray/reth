@@ -148,5 +148,6 @@ pub struct PrePostStateWitness {
     #[serde_as(as = "bincode::CacheBincode")]
     pub pre_state: Cache,
     /// Hashed post-execution state.
+    #[serde_as(as = "bincode::HashedPostStateBincode")]
     pub post_state: HashedPostState,
 }
