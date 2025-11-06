@@ -15,6 +15,7 @@ use alloy_primitives::{
     map::{HashMap, HashSet},
     Address, Bytes, StorageValue, B256, U256,
 };
+use alloy_rpc_types_debug::ExecutionWitness;
 use reth_execution_types::FlatPreState;
 use reth_revm::{
     db::{Cache, CacheDB, DBErrorMarker},
@@ -22,6 +23,7 @@ use reth_revm::{
     state::{AccountInfo, Bytecode},
     DatabaseRef,
 };
+use reth_trie_common::HashedPostState;
 use serde_with::serde_as;
 
 /// A flat execution witness containing the state and context needed for stateless block execution.
@@ -133,4 +135,18 @@ impl DatabaseRef for SelfDestructCompatibleFailingDB {
     fn block_hash_ref(&self, _number: u64) -> Result<B256, Self::Error> {
         Err(NonCapturedStateError)
     }
+}
+
+/// Witness for pre and post state proving.
+#[serde_with::serde_as]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+
+pub struct PrePostStateWitness {
+    /// Trie witness for the execution.
+    pub trie: ExecutionWitness,
+    /// Pre-execution state cache.
+    #[serde_as(as = "bincode::CacheBincode")]
+    pub pre_state: Cache,
+    /// Hashed post-execution state.
+    pub post_state: HashedPostState,
 }

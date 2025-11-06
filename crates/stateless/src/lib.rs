@@ -60,7 +60,7 @@ pub use alloy_rpc_types_debug::ExecutionWitness;
 
 use reth_ethereum_primitives::Block;
 
-use crate::flat_witness::FlatExecutionWitness;
+use crate::flat_witness::{FlatExecutionWitness, PrePostStateWitness};
 
 /// `StatelessInput` is a convenience structure for serializing the input needed
 /// for the stateless validation function.
@@ -69,6 +69,10 @@ pub type StatelessInput = GenericStatelessInput<ExecutionWitness>;
 /// `StatelessExecutionInput` is a convenience structure for serializing the input needed
 /// for an execution-only stateless validation function.
 pub type StatelessExecutionInput = GenericStatelessInput<FlatExecutionWitness>;
+
+/// `StatelessInputPrePostState` is a convenience structure for serializing the input needed
+/// for a pre and post state validation.
+pub type StatelessInputPrePostState = GenericStatelessInput<PrePostStateWitness>;
 
 /// Generic structure for stateless validation input.
 #[serde_with::serde_as]
