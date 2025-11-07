@@ -24,7 +24,7 @@ use reth_db_api::{
     models::{AccountBeforeTx, StoredBlockBodyIndices},
 };
 use reth_ethereum_primitives::EthPrimitives;
-use reth_execution_types::ExecutionOutcome;
+use reth_execution_types::{ExecutionOutcome, FlatPreState, FlatWitnessRecord};
 use reth_primitives_traits::{
     Account, Block, BlockBody, Bytecode, GotExpected, NodePrimitives, RecoveredBlock, SealedHeader,
     SignerRecoverable,
@@ -396,7 +396,7 @@ impl<T: NodePrimitives, ChainSpec: EthChainSpec + 'static> TransactionsProvider
                         excess_blob_gas: block.header().excess_blob_gas(),
                         timestamp: block.header().timestamp(),
                     };
-                    return Ok(Some((tx.clone(), meta)))
+                    return Ok(Some((tx.clone(), meta)));
                 }
             }
         }
@@ -408,7 +408,7 @@ impl<T: NodePrimitives, ChainSpec: EthChainSpec + 'static> TransactionsProvider
         let mut current_tx_number: TxNumber = 0;
         for block in lock.values() {
             if current_tx_number + (block.body().transaction_count() as TxNumber) > id {
-                return Ok(Some(block.header().number()))
+                return Ok(Some(block.header().number()));
             }
             current_tx_number += block.body().transaction_count() as TxNumber;
         }
@@ -857,6 +857,10 @@ where
 
     fn witness(&self, _input: TrieInput, _target: HashedPostState) -> ProviderResult<Vec<Bytes>> {
         Ok(Vec::default())
+    }
+
+    fn flat_witness(&self, _record: FlatWitnessRecord) -> ProviderResult<FlatPreState> {
+        Ok(Default::default())
     }
 }
 

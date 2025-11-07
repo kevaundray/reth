@@ -2,6 +2,7 @@ use super::ExecutedBlock;
 use alloy_consensus::BlockHeader;
 use alloy_primitives::{keccak256, Address, BlockNumber, Bytes, StorageKey, StorageValue, B256};
 use reth_errors::ProviderResult;
+use reth_execution_types::{FlatPreState, FlatWitnessRecord};
 use reth_primitives_traits::{Account, Bytecode, NodePrimitives};
 use reth_storage_api::{
     AccountReader, BlockHashReader, BytecodeReader, HashedPostStateProvider, StateProofProvider,
@@ -202,6 +203,10 @@ impl<N: NodePrimitives> StateProofProvider for MemoryOverlayStateProviderRef<'_,
     fn witness(&self, mut input: TrieInput, target: HashedPostState) -> ProviderResult<Vec<Bytes>> {
         input.prepend_self(self.trie_input().clone());
         self.historical.witness(input, target)
+    }
+
+    fn flat_witness(&self, record: FlatWitnessRecord) -> ProviderResult<FlatPreState> {
+        self.historical.flat_witness(record)
     }
 }
 

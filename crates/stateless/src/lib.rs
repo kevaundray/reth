@@ -39,6 +39,8 @@ mod recover_block;
 /// Sparse trie implementation for stateless validation
 pub mod trie;
 
+pub mod flat_witness;
+
 use alloy_genesis::ChainConfig;
 #[doc(inline)]
 pub use recover_block::UncompressedPublicKey;
@@ -58,18 +60,31 @@ pub use alloy_rpc_types_debug::ExecutionWitness;
 
 use reth_ethereum_primitives::Block;
 
+use crate::flat_witness::{FlatExecutionWitness, PrePostStateWitness};
+
 /// `StatelessInput` is a convenience structure for serializing the input needed
 /// for the stateless validation function.
+pub type StatelessInput = GenericStatelessInput<ExecutionWitness>;
+
+/// `StatelessExecutionInput` is a convenience structure for serializing the input needed
+/// for an execution-only stateless validation function.
+pub type StatelessExecutionInput = GenericStatelessInput<FlatExecutionWitness>;
+
+/// `StatelessInputPrePostState` is a convenience structure for serializing the input needed
+/// for a pre and post state validation.
+pub type StatelessInputPrePostState = GenericStatelessInput<PrePostStateWitness>;
+
+/// Generic structure for stateless validation input.
 #[serde_with::serde_as]
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct StatelessInput {
+pub struct GenericStatelessInput<Witness> {
     /// The block being executed in the stateless validation function
     #[serde_as(
         as = "reth_primitives_traits::serde_bincode_compat::Block<reth_ethereum_primitives::TransactionSigned, alloy_consensus::Header>"
     )]
     pub block: Block,
-    /// `ExecutionWitness` for the stateless validation function
-    pub witness: ExecutionWitness,
+    /// `FlatExecutionWitness` for the stateless validation function
+    pub witness: Witness,
     /// Chain configuration for the stateless validation function
     #[serde_as(as = "alloy_genesis::serde_bincode_compat::ChainConfig<'_>")]
     pub chain_config: ChainConfig,

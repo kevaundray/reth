@@ -4,6 +4,8 @@ use crate::{
     models::{BlockchainTest, ForkSpec},
     Case, Error, Suite,
 };
+
+use alloy_primitives::{keccak256, map::HashMap, B256, U256};
 use alloy_rlp::{Decodable, Encodable};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use reth_chainspec::ChainSpec;
@@ -16,13 +18,19 @@ use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives_traits::{Block as BlockTrait, RecoveredBlock, SealedBlock};
 use reth_provider::{
     test_utils::create_test_provider_factory_with_chain_spec, BlockWriter, DatabaseProviderFactory,
-    ExecutionOutcome, HeaderProvider, HistoryWriter, OriginalValuesKnown, StateProofProvider,
-    StateWriter, StaticFileProviderFactory, StaticFileSegment, StaticFileWriter,
+    ExecutionOutcome, FlatWitnessRecord, HeaderProvider, HistoryWriter, OriginalValuesKnown,
+    StateProofProvider, StateWriter, StaticFileProviderFactory, StaticFileSegment,
+    StaticFileWriter,
 };
 use reth_revm::{database::StateProviderDatabase, witness::ExecutionWitnessRecord, State};
 use reth_stateless::{
-    trie::StatelessSparseTrie, validation::stateless_validation_with_trie, ExecutionWitness,
-    UncompressedPublicKey,
+    flat_witness::FlatExecutionWitness,
+    trie::StatelessSparseTrie,
+    validation::{
+        stateless_validation_flatdb_storage_check, stateless_validation_with_flatdb,
+        stateless_validation_with_trie,
+    },
+    ExecutionWitness, UncompressedPublicKey,
 };
 use reth_trie::{HashedPostState, KeccakKeyHasher, StateRoot};
 use reth_trie_db::DatabaseStateRoot;
@@ -106,7 +114,7 @@ impl BlockchainTestCase {
     pub fn run_single_case(
         name: &str,
         case: &BlockchainTest,
-    ) -> Result<Vec<(RecoveredBlock<Block>, ExecutionWitness)>, Error> {
+    ) -> Result<Vec<(RecoveredBlock<Block>, ExecutionWitnesses)>, Error> {
         let expectation = Self::expected_failure(case);
         match run_case(case) {
             // All blocks executed successfully.
@@ -187,6 +195,17 @@ impl Case for BlockchainTestCase {
     }
 }
 
+/// Execution witnessses for both trie and flatdb stateless validation.
+#[derive(Debug, Clone)]
+pub struct ExecutionWitnesses {
+    /// Trie-based execution witness.
+    pub trie: ExecutionWitness,
+    /// Flatdb-based execution witness.
+    pub flatdb: FlatExecutionWitness,
+    /// Post-state witness.
+    pub post_state: HashedPostState,
+}
+
 /// Executes a single `BlockchainTest` returning an error as soon as any block has a consensus
 /// validation failure.
 ///
@@ -203,7 +222,7 @@ impl Case for BlockchainTestCase {
 ///   witness if the error is of variant `BlockProcessingFailed`.
 fn run_case(
     case: &BlockchainTest,
-) -> Result<Vec<(RecoveredBlock<Block>, ExecutionWitness)>, Error> {
+) -> Result<Vec<(RecoveredBlock<Block>, ExecutionWitnesses)>, Error> {
     // Create a new test database and initialize a provider for the test case.
     let chain_spec: Arc<ChainSpec> = Arc::new(case.network.into());
     let factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
@@ -241,7 +260,7 @@ fn run_case(
 
     let executor_provider = EthEvmConfig::ethereum(chain_spec.clone());
     let mut parent = genesis_block;
-    let mut program_inputs = Vec::new();
+    let mut program_inputs: Vec<(RecoveredBlock<Block>, ExecutionWitnesses)> = Vec::new();
 
     for (block_index, block) in blocks.iter().enumerate() {
         // Note: same as the comment on `decode_blocks` as to why we cannot use block.number
@@ -264,6 +283,7 @@ fn run_case(
         })?;
 
         let mut witness_record = ExecutionWitnessRecord::default();
+        let mut flat_witness_record = FlatWitnessRecord::default();
 
         // Execute the block
         let state_provider = provider.latest();
@@ -273,6 +293,7 @@ fn run_case(
         let output = executor
             .execute_with_state_closure_always(&(*block).clone(), |statedb: &State<_>| {
                 witness_record.record_executed_state(statedb);
+                flat_witness_record.record_executed_state(statedb);
             })
             .map_err(|err| Error::block_failed(block_number, program_inputs.clone(), err))?;
 
@@ -296,7 +317,7 @@ fn run_case(
         let range = smallest..block_number;
 
         exec_witness.headers = provider
-            .headers_range(range)?
+            .headers_range(range.clone())?
             .into_iter()
             .map(|header| {
                 let mut serialized_header = Vec::new();
@@ -305,11 +326,29 @@ fn run_case(
             })
             .collect();
 
-        program_inputs.push((block.clone(), exec_witness));
+        let flat_prestate = state_provider.flat_witness(flat_witness_record).unwrap();
+        let block_hashes: HashMap<U256, B256> = exec_witness
+            .headers
+            .iter()
+            .zip(range)
+            .map(|(bytes, num)| (U256::from(num), keccak256(bytes)))
+            .collect();
+        let parent_encoded = exec_witness.headers.last().cloned().unwrap();
+        let flat_witness = FlatExecutionWitness::new(flat_prestate, block_hashes, parent_encoded);
 
         // Compute and check the post state root
         let hashed_state =
             HashedPostState::from_bundle_state::<KeccakKeyHasher>(output.state.state());
+
+        program_inputs.push((
+            block.clone(),
+            ExecutionWitnesses {
+                trie: exec_witness,
+                flatdb: flat_witness,
+                post_state: hashed_state.clone(),
+            },
+        ));
+
         let (computed_state_root, _) =
             StateRoot::overlay_root_with_updates(provider.tx_ref(), hashed_state.clone())
                 .map_err(|err| Error::block_failed(block_number, program_inputs.clone(), err))?;
@@ -359,21 +398,53 @@ fn run_case(
     }
 
     // Now validate using the stateless client if everything else passes
-    for (recovered_block, execution_witness) in &program_inputs {
+    for (recovered_block, execution_witnesses) in &program_inputs {
         let block = recovered_block.clone().into_block();
 
         // Recover the actual public keys from the transaction signatures
         let public_keys = recover_signers(block.body().transactions())
             .expect("Failed to recover public keys from transaction signatures");
 
-        stateless_validation_with_trie::<StatelessSparseTrie, _, _>(
-            block,
-            public_keys,
-            execution_witness.clone(),
+        // Validate stateless execution using a sparse trie for the storage access.
+        let (_, trie_output) = stateless_validation_with_trie::<StatelessSparseTrie, _, _>(
+            block.clone(),
+            public_keys.clone(),
+            execution_witnesses.trie.clone(),
             chain_spec.clone(),
             EthEvmConfig::new(chain_spec.clone()),
         )
         .expect("stateless validation failed");
+        let trie_post_state =
+            HashedPostState::from_bundle_state::<KeccakKeyHasher>(&trie_output.state.state);
+
+        // Validate stateless execution using a flatdb for the storage access.
+        let (_, flatdb_output) = stateless_validation_with_flatdb::<_, _>(
+            block.clone(),
+            public_keys.clone(),
+            execution_witnesses.flatdb.clone(),
+            chain_spec.clone(),
+            EthEvmConfig::new(chain_spec.clone()),
+        )
+        .expect("stateless validation with flatdb failed");
+        let flatdb_post_state =
+            HashedPostState::from_bundle_state::<KeccakKeyHasher>(&flatdb_output.state.state);
+
+        if trie_post_state != flatdb_post_state {
+            return Err(Error::Assertion(
+                "Post state mismatch between trie and flatdb implementations".to_string(),
+            ));
+        }
+
+        // Validate that the flatdb used as pre-state can be proven using a sparse trie (i.e., in a
+        // different proof). Also checks that the post-state diff generated during flatdb
+        // execution results in the expected post-state root.
+        stateless_validation_flatdb_storage_check::<StatelessSparseTrie>(
+            block,
+            execution_witnesses.trie.clone(),
+            execution_witnesses.flatdb.state.clone(),
+            flatdb_post_state,
+        )
+        .expect("stateless flatdb state check failed");
     }
 
     Ok(program_inputs)
@@ -510,8 +581,19 @@ fn path_contains(path_str: &str, rhs: &[&str]) -> bool {
     path_str.contains(&rhs)
 }
 
-fn execution_witness_with_parent(parent: &RecoveredBlock<Block>) -> ExecutionWitness {
+fn execution_witness_with_parent(parent: &RecoveredBlock<Block>) -> ExecutionWitnesses {
     let mut serialized_header = Vec::new();
     parent.header().encode(&mut serialized_header);
-    ExecutionWitness { headers: vec![serialized_header.into()], ..Default::default() }
+    let trie_witness =
+        ExecutionWitness { headers: vec![serialized_header.clone().into()], ..Default::default() };
+    let flatdb_witness = FlatExecutionWitness::new(
+        Default::default(),
+        HashMap::from_iter([(U256::from(parent.number), parent.hash())]),
+        serialized_header.into(),
+    );
+    ExecutionWitnesses {
+        trie: trie_witness,
+        flatdb: flatdb_witness,
+        post_state: Default::default(),
+    }
 }

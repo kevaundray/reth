@@ -21,6 +21,7 @@ use jsonrpsee::core::RpcResult;
 use reth_chainspec::{ChainSpecProvider, EthChainSpec, EthereumHardforks};
 use reth_errors::RethError;
 use reth_evm::{execute::Executor, ConfigureEvm, EvmEnvFor, TxEnvFor};
+use reth_execution_types::FlatWitnessRecord;
 use reth_primitives_traits::{Block as _, BlockBody, ReceiptWithBloom, RecoveredBlock};
 use reth_revm::{database::StateProviderDatabase, db::State, witness::ExecutionWitnessRecord};
 use reth_rpc_api::DebugApiServer;
@@ -31,6 +32,7 @@ use reth_rpc_eth_api::{
 };
 use reth_rpc_eth_types::{EthApiError, StateCacheDb};
 use reth_rpc_server_types::{result::internal_rpc_err, ToRpcResult};
+use reth_stateless::flat_witness::FlatExecutionWitness;
 use reth_storage_api::{
     BlockIdReader, BlockReaderIdExt, HeaderProvider, ProviderBlock, ReceiptProviderIdExt,
     StateProofProvider, StateProviderFactory, StateRootProvider, TransactionVariant,
@@ -41,6 +43,7 @@ use revm::{context::Block, context_interface::Transaction, state::EvmState, Data
 use revm_inspectors::tracing::{
     FourByteInspector, MuxInspector, TracingInspector, TracingInspectorConfig, TransactionContext,
 };
+use revm_primitives::{keccak256, U256};
 use std::sync::Arc;
 use tokio::sync::{AcquireError, OwnedSemaphorePermit};
 
@@ -459,7 +462,7 @@ where
                     // additional tracers
                     Err(EthApiError::Unsupported("unsupported tracer").into())
                 }
-            }
+            };
         }
 
         // default structlog tracer
@@ -495,7 +498,7 @@ where
         opts: Option<GethDebugTracingCallOptions>,
     ) -> Result<Vec<Vec<GethTrace>>, Eth::Error> {
         if bundles.is_empty() {
-            return Err(EthApiError::InvalidParams(String::from("bundles are empty.")).into())
+            return Err(EthApiError::InvalidParams(String::from("bundles are empty.")).into());
         }
 
         let StateContext { transaction_index, block_number } = state_context.unwrap_or_default();
@@ -616,6 +619,38 @@ where
         self.debug_execution_witness_for_block(block).await
     }
 
+    /// The `debug_flatExecutionWitnessByBlockHash` method allows for re-execution of a block with
+    /// the purpose of generating an execution-only witness.
+    pub async fn debug_flat_execution_witness_by_block_hash(
+        &self,
+        hash: B256,
+    ) -> Result<FlatExecutionWitness, Eth::Error> {
+        let this = self.clone();
+        let block = this
+            .eth_api()
+            .recovered_block(hash.into())
+            .await?
+            .ok_or(EthApiError::HeaderNotFound(hash.into()))?;
+
+        self.debug_flat_execution_witness_for_block(block).await
+    }
+
+    /// The `debug_flatExecutionWitness` method allows for re-execution of a block with the purpose
+    /// of generating an execution-only witness.
+    pub async fn debug_flat_execution_witness(
+        &self,
+        block_id: BlockNumberOrTag,
+    ) -> Result<FlatExecutionWitness, Eth::Error> {
+        let this = self.clone();
+        let block = this
+            .eth_api()
+            .recovered_block(block_id.into())
+            .await?
+            .ok_or(EthApiError::HeaderNotFound(block_id.into()))?;
+
+        self.debug_flat_execution_witness_for_block(block).await
+    }
+
     /// The `debug_executionWitness` method allows for re-execution of a block with the purpose of
     /// generating an execution witness. The witness comprises of a map of all hashed trie nodes to
     /// their preimages that were required during the execution of the block, including during state
@@ -694,6 +729,72 @@ where
         Ok(exec_witness)
     }
 
+    /// Generates a flat execution witness, using the given recovered block.
+    pub async fn debug_flat_execution_witness_for_block(
+        &self,
+        block: Arc<RecoveredBlock<ProviderBlock<Eth::Provider>>>,
+    ) -> Result<FlatExecutionWitness, Eth::Error> {
+        let this = self.clone();
+        let block_number = block.header().number();
+
+        let (pre_state, lowest_block_number) = self
+            .eth_api()
+            .spawn_with_state_at_block(block.parent_hash().into(), move |state_provider| {
+                let db = StateProviderDatabase::new(&state_provider);
+                let block_executor = this.eth_api().evm_config().executor(db);
+
+                let mut witness_record = FlatWitnessRecord::default();
+                let mut lowest_block_number = Default::default();
+
+                let _ = block_executor
+                    .execute_with_state_closure(&block, |statedb: &State<_>| {
+                        witness_record.record_executed_state(statedb);
+                        lowest_block_number = statedb.block_hashes.keys().next().copied()
+                    })
+                    .map_err(|err| EthApiError::Internal(err.into()))?;
+
+                let pre_state =
+                    state_provider.flat_witness(witness_record).map_err(EthApiError::from)?;
+
+                Ok((pre_state, lowest_block_number))
+            })
+            .await?;
+
+        let smallest = match lowest_block_number {
+            Some(smallest) => smallest,
+            None => {
+                // Return only the parent header, if there were no calls to the
+                // BLOCKHASH opcode.
+                block_number.saturating_sub(1)
+            }
+        };
+
+        let range = smallest..block_number;
+
+        let headers: Vec<Bytes> = self
+            .provider()
+            .headers_range(range.clone())
+            .map_err(EthApiError::from)?
+            .into_iter()
+            .map(|header| {
+                let mut serialized_header = Vec::new();
+                header.encode(&mut serialized_header);
+                serialized_header.into()
+            })
+            .collect();
+
+        let block_hashes = headers
+            .iter()
+            .zip(range)
+            .map(|(bytes, num)| (U256::from(num), keccak256(bytes)))
+            .collect();
+
+        let parent = headers.last().unwrap().clone();
+        let exec_witness = FlatExecutionWitness::new(pre_state, block_hashes, parent);
+
+        Ok(exec_witness)
+    }
+
     /// Returns the code associated with a given hash at the specified block ID. If no code is
     /// found, it returns None. If no block ID is provided, it defaults to the latest block.
     pub async fn debug_code_by_hash(
@@ -753,7 +854,7 @@ where
                     GethDebugBuiltInTracerType::FourByteTracer => {
                         let mut inspector = FourByteInspector::default();
                         let res = self.eth_api().inspect(db, evm_env, tx_env, &mut inspector)?;
-                        return Ok((FourByteFrame::from(&inspector).into(), res.state))
+                        return Ok((FourByteFrame::from(&inspector).into(), res.state));
                     }
                     GethDebugBuiltInTracerType::CallTracer => {
                         let call_config = tracer_config
@@ -776,7 +877,7 @@ where
                             .geth_builder()
                             .geth_call_traces(call_config, res.result.gas_used());
 
-                        return Ok((frame.into(), res.state))
+                        return Ok((frame.into(), res.state));
                     }
                     GethDebugBuiltInTracerType::PreStateTracer => {
                         let prestate_config = tracer_config
@@ -799,7 +900,7 @@ where
                             .geth_prestate_traces(&res, &prestate_config, db)
                             .map_err(Eth::Error::from_eth_err)?;
 
-                        return Ok((frame.into(), res.state))
+                        return Ok((frame.into(), res.state));
                     }
                     GethDebugBuiltInTracerType::NoopTracer => {
                         Ok((NoopFrame::default().into(), Default::default()))
@@ -818,7 +919,7 @@ where
                         let frame = inspector
                             .try_into_mux_frame(&res, db, tx_info)
                             .map_err(Eth::Error::from_eth_err)?;
-                        return Ok((frame.into(), res.state))
+                        return Ok((frame.into(), res.state));
                     }
                     GethDebugBuiltInTracerType::FlatCallTracer => {
                         let flat_call_config = tracer_config
@@ -877,7 +978,7 @@ where
                     // additional tracers
                     Err(EthApiError::Unsupported("unsupported tracer").into())
                 }
-            }
+            };
         }
 
         // default structlog tracer
@@ -1082,6 +1183,15 @@ where
         Self::debug_execution_witness(self, block).await.map_err(Into::into)
     }
 
+    /// Handler for `debug_flatExecutionWitness`
+    async fn debug_flat_execution_witness(
+        &self,
+        block: BlockNumberOrTag,
+    ) -> RpcResult<FlatExecutionWitness> {
+        let _permit = self.acquire_trace_permit().await;
+        Self::debug_flat_execution_witness(self, block).await.map_err(Into::into)
+    }
+
     /// Handler for `debug_executionWitnessByBlockHash`
     async fn debug_execution_witness_by_block_hash(
         &self,
@@ -1089,6 +1199,15 @@ where
     ) -> RpcResult<ExecutionWitness> {
         let _permit = self.acquire_trace_permit().await;
         Self::debug_execution_witness_by_block_hash(self, hash).await.map_err(Into::into)
+    }
+
+    /// Handler for `debug_flatExecutionWitnessByBlockHash`
+    async fn debug_flat_execution_witness_by_block_hash(
+        &self,
+        hash: B256,
+    ) -> RpcResult<FlatExecutionWitness> {
+        let _permit = self.acquire_trace_permit().await;
+        Self::debug_flat_execution_witness_by_block_hash(self, hash).await.map_err(Into::into)
     }
 
     async fn debug_backtrace_at(&self, _location: &str) -> RpcResult<()> {

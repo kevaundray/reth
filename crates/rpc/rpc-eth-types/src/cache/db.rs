@@ -4,6 +4,7 @@
 
 use alloy_primitives::{Address, B256, U256};
 use reth_errors::ProviderResult;
+use reth_execution_types::{FlatPreState, FlatWitnessRecord};
 use reth_revm::{database::StateProviderDatabase, DatabaseRef};
 use reth_storage_api::{BytecodeReader, HashedPostStateProvider, StateProvider};
 use reth_trie::{HashedStorage, MultiProofTargets};
@@ -104,6 +105,10 @@ impl reth_storage_api::StateProofProvider for StateProviderTraitObjWrapper<'_> {
         target: reth_trie::HashedPostState,
     ) -> reth_errors::ProviderResult<Vec<alloy_primitives::Bytes>> {
         self.0.witness(input, target)
+    }
+
+    fn flat_witness(&self, record: FlatWitnessRecord) -> ProviderResult<FlatPreState> {
+        self.0.flat_witness(record)
     }
 }
 

@@ -9762,6 +9762,7 @@ dependencies = [
  "revm-state",
  "strum 0.27.2",
  "tempfile",
+ "thiserror 2.0.17",
  "tokio",
  "tracing",
 ]
@@ -9878,6 +9879,7 @@ dependencies = [
  "alloy-consensus",
  "alloy-primitives",
  "reth-ethereum-forks",
+ "reth-execution-types",
  "reth-primitives-traits",
  "reth-storage-api",
  "reth-storage-errors",
@@ -9949,6 +9951,7 @@ dependencies = [
  "reth-rpc-eth-api",
  "reth-rpc-eth-types",
  "reth-rpc-server-types",
+ "reth-stateless",
  "reth-storage-api",
  "reth-tasks",
  "reth-testing-utils",
@@ -9992,6 +9995,7 @@ dependencies = [
  "reth-engine-primitives",
  "reth-network-peers",
  "reth-rpc-eth-api",
+ "reth-stateless",
  "reth-trie-common",
 ]
 
@@ -10394,6 +10398,7 @@ dependencies = [
  "reth-ethereum-consensus",
  "reth-ethereum-primitives",
  "reth-evm",
+ "reth-execution-types",
  "reth-primitives-traits",
  "reth-revm",
  "reth-trie-common",
@@ -10402,6 +10407,7 @@ dependencies = [
  "serde",
  "serde_with",
  "thiserror 2.0.17",
+ "tracing",
 ]
 
 [[package]]

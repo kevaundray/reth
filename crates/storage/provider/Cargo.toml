@@ -16,7 +16,10 @@ workspace = true
 reth-chainspec.workspace = true
 reth-execution-types.workspace = true
 reth-ethereum-primitives = { workspace = true, features = ["reth-codec"] }
-reth-primitives-traits = { workspace = true, features = ["reth-codec", "secp256k1"] }
+reth-primitives-traits = { workspace = true, features = [
+    "reth-codec",
+    "secp256k1",
+] }
 reth-fs-util.workspace = true
 reth-errors.workspace = true
 reth-storage-errors.workspace = true
@@ -32,6 +35,7 @@ reth-codecs.workspace = true
 reth-chain-state.workspace = true
 reth-node-types.workspace = true
 reth-static-file-types.workspace = true
+
 # ethereum
 alloy-eips.workspace = true
 alloy-primitives.workspace = true
@@ -49,11 +53,14 @@ metrics.workspace = true
 
 # misc
 itertools.workspace = true
-notify = { workspace = true, default-features = false, features = ["macos_fsevent"] }
+notify = { workspace = true, default-features = false, features = [
+    "macos_fsevent",
+] }
 parking_lot.workspace = true
 dashmap = { workspace = true, features = ["inline"] }
 strum.workspace = true
 eyre.workspace = true
+thiserror.workspace = true
 
 # test-utils
 reth-ethereum-engine-primitives = { workspace = true, optional = true }
@@ -64,7 +71,10 @@ rayon.workspace = true
 
 [dev-dependencies]
 reth-db = { workspace = true, features = ["test-utils"] }
-reth-primitives-traits = { workspace = true, features = ["arbitrary", "test-utils"] }
+reth-primitives-traits = { workspace = true, features = [
+    "arbitrary",
+    "test-utils",
+] }
 reth-chain-state = { workspace = true, features = ["test-utils"] }
 reth-trie = { workspace = true, features = ["test-utils"] }
 reth-testing-utils.workspace = true

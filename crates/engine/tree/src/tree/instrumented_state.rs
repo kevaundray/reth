@@ -5,8 +5,9 @@ use reth_errors::ProviderResult;
 use reth_metrics::Metrics;
 use reth_primitives_traits::{Account, Bytecode};
 use reth_provider::{
-    AccountReader, BlockHashReader, BytecodeReader, HashedPostStateProvider, StateProofProvider,
-    StateProvider, StateRootProvider, StorageRootProvider,
+    AccountReader, BlockHashReader, BytecodeReader, FlatPreState, FlatWitnessRecord,
+    HashedPostStateProvider, StateProofProvider, StateProvider, StateRootProvider,
+    StorageRootProvider,
 };
 use reth_trie::{
     updates::TrieUpdates, AccountProof, HashedPostState, HashedStorage, MultiProof,
@@ -250,6 +251,10 @@ impl<S: StateProofProvider> StateProofProvider for InstrumentedStateProvider<S> 
         target: HashedPostState,
     ) -> ProviderResult<Vec<alloy_primitives::Bytes>> {
         self.state_provider.witness(input, target)
+    }
+
+    fn flat_witness(&self, record: FlatWitnessRecord) -> ProviderResult<FlatPreState> {
+        self.state_provider.flat_witness(record)
     }
 }
 
