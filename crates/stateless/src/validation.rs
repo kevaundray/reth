@@ -404,14 +404,23 @@ where
                 return Err(StatelessValidationError::FlatdbAccountStateMismatch { address });
             }
             for (slot, value) in flatdb_account.storage {
-                let trie_value = db
-                    .storage(address, slot)
-                    .map_err(|_| StatelessValidationError::GetStorageSlotFromWitnessDatabase)?;
-                if trie_value != value {
-                    return Err(StatelessValidationError::FlatdbStorageSlotStateMismatch {
-                        address,
-                        slot,
-                    });
+                if trie_account.is_none() {
+                    if !value.is_zero() {
+                        return Err(StatelessValidationError::FlatdbStorageSlotStateMismatch {
+                            address,
+                            slot,
+                        });
+                    }
+                } else {
+                    let trie_value = db
+                        .storage(address, slot)
+                        .map_err(|_| StatelessValidationError::GetStorageSlotFromWitnessDatabase)?;
+                    if trie_value != value {
+                        return Err(StatelessValidationError::FlatdbStorageSlotStateMismatch {
+                            address,
+                            slot,
+                        });
+                    }
                 }
             }
         }
