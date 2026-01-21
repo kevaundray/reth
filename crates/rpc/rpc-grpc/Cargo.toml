@@ -1,0 +1,48 @@
+[package]
+name = "reth-rpc-grpc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "gRPC API for high-performance binary data transfer"
+
+[lints]
+workspace = true
+
+[dependencies]
+# reth
+reth-evm.workspace = true
+reth-primitives-traits.workspace = true
+reth-revm = { workspace = true, features = ["witness"] }
+reth-rpc-eth-api.workspace = true
+reth-rpc-eth-types.workspace = true
+reth-storage-api.workspace = true
+
+# ethereum
+alloy-consensus.workspace = true
+alloy-eips.workspace = true
+alloy-primitives.workspace = true
+alloy-rlp.workspace = true
+alloy-rpc-types-debug.workspace = true
+
+# grpc
+tonic = "0.12"
+prost = "0.13"
+
+# async
+tokio = { workspace = true, features = ["sync"] }
+tokio-stream.workspace = true
+
+
+[build-dependencies]
+tonic-build = "0.12"
+
+[dev-dependencies]
+flate2 = "1.1"
+serde_json.workspace = true
+
+[[example]]
+name = "witness_server"
+path = "examples/witness_server.rs"

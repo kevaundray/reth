@@ -111,6 +111,7 @@ members = [
     "crates/rpc/rpc-testing-util/",
     "crates/rpc/rpc-e2e-tests/",
     "crates/rpc/rpc-convert/",
+    "crates/rpc/rpc-grpc/",
     "crates/rpc/rpc/",
     "crates/stages/api/",
     "crates/stages/stages/",
@@ -448,6 +449,7 @@ reth-rpc-layer = { path = "crates/rpc/rpc-layer" }
 reth-optimism-flashblocks = { path = "crates/optimism/flashblocks" }
 reth-rpc-server-types = { path = "crates/rpc/rpc-server-types" }
 reth-rpc-convert = { path = "crates/rpc/rpc-convert" }
+reth-rpc-grpc = { path = "crates/rpc/rpc-grpc" }
 reth-stages = { path = "crates/stages/stages" }
 reth-stages-api = { path = "crates/stages/api" }
 reth-stages-types = { path = "crates/stages/types", default-features = false }

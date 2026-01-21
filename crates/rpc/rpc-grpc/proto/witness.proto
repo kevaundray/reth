@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package reth.witness;
+
+// WitnessService provides high-performance binary access to execution witness data.
+// This avoids the overhead of JSON-RPC hex encoding for large binary payloads.
+service WitnessService {
+  // Get execution witness for a block by number
+  rpc GetExecutionWitness(ExecutionWitnessRequest) returns (ExecutionWitnessResponse);
+
+  // Get execution witness for a block by hash
+  rpc GetExecutionWitnessByHash(ExecutionWitnessHashRequest) returns (ExecutionWitnessResponse);
+
+  // Stream execution witness data in chunks for very large witnesses
+  rpc StreamExecutionWitness(ExecutionWitnessRequest) returns (stream ExecutionWitnessChunk);
+}
+
+// Request for execution witness by block number
+message ExecutionWitnessRequest {
+  // Block number (use -1 for latest, -2 for pending, etc.)
+  int64 block_number = 1;
+}
+
+// Request for execution witness by block hash
+message ExecutionWitnessHashRequest {
+  // 32-byte block hash
+  bytes block_hash = 1;
+}
+
+// Full execution witness response
+message ExecutionWitnessResponse {
+  // List of hashed trie node preimages required during block execution
+  repeated bytes state = 1;
+
+  // List of contract bytecode preimages accessed/created during execution
+  repeated bytes codes = 2;
+
+  // List of unhashed account addresses and storage slot preimages
+  repeated bytes keys = 3;
+
+  // RLP-encoded block headers required for BLOCKHASH opcode verification
+  repeated bytes headers = 4;
+}
+
+// Chunk for streaming large witness data
+message ExecutionWitnessChunk {
+  // Which field this chunk belongs to
+  WitnessField field = 1;
+
+  // Index within the field's array
+  uint32 index = 2;
+
+  // The actual data
+  bytes data = 3;
+
+  // True if this is the last chunk for this field
+  bool is_last_for_field = 4;
+}
+
+// Identifies which witness field a chunk belongs to
+enum WitnessField {
+  WITNESS_FIELD_STATE = 0;
+  WITNESS_FIELD_CODES = 1;
+  WITNESS_FIELD_KEYS = 2;
+  WITNESS_FIELD_HEADERS = 3;
+}
